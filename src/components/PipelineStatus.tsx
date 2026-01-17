@@ -34,15 +34,11 @@ function TaskItem({ task }: { task: PipelineTask }) {
   )
 }
 
-/**
- * Pipeline status dropdown showing current and recent tasks
- */
 export function PipelineStatus() {
   const { activeTasks, recentHistory, isBusy, taskCount } = usePipeline()
   const [isOpen, setIsOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -79,7 +75,6 @@ export function PipelineStatus() {
 
       {isOpen && (
         <div className="absolute right-0 top-full z-50 mt-1 w-80 rounded-lg border border-border bg-card shadow-lg">
-          {/* Active tasks */}
           {activeTasks.length > 0 && (
             <div className="border-b border-border">
               <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -91,7 +86,6 @@ export function PipelineStatus() {
             </div>
           )}
 
-          {/* Recent history */}
           {recentHistory.length > 0 && (
             <div>
               <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -103,7 +97,6 @@ export function PipelineStatus() {
             </div>
           )}
 
-          {/* Empty state */}
           {activeTasks.length === 0 && recentHistory.length === 0 && (
             <div className="px-4 py-6 text-center text-sm text-muted-foreground">
               No recent activity

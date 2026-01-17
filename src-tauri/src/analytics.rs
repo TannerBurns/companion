@@ -1,12 +1,9 @@
-//! Analytics tracking for usage patterns and performance metrics.
-//!
-//! All analytics are stored locally - no data is sent externally.
+//! Local analytics tracking. No data is sent externally.
 
 use crate::db::Database;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-/// A tracked analytics event
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnalyticsEvent {
     pub event_type: String,
@@ -22,7 +19,6 @@ impl AnalyticsEvent {
     }
 }
 
-/// Usage summary over a time period
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UsageSummary {
     pub total_syncs: i32,
@@ -32,7 +28,6 @@ pub struct UsageSummary {
     pub days: i32,
 }
 
-/// Analytics tracking service
 pub struct AnalyticsService {
     db: Arc<Database>,
 }
@@ -42,7 +37,6 @@ impl AnalyticsService {
         Self { db }
     }
 
-    /// Track a generic event
     pub async fn track(&self, event: AnalyticsEvent) -> Result<(), sqlx::Error> {
         let now = chrono::Utc::now().timestamp();
 
@@ -58,7 +52,6 @@ impl AnalyticsService {
         Ok(())
     }
 
-    /// Track a view event
     pub async fn track_view(&self, view_name: &str) -> Result<(), sqlx::Error> {
         self.track(AnalyticsEvent::new(
             "view",
@@ -67,7 +60,6 @@ impl AnalyticsService {
         .await
     }
 
-    /// Track a sync event
     pub async fn track_sync(
         &self,
         source: &str,
@@ -85,7 +77,6 @@ impl AnalyticsService {
         .await
     }
 
-    /// Track an AI request
     pub async fn track_ai_request(
         &self,
         model: &str,
@@ -103,7 +94,6 @@ impl AnalyticsService {
         .await
     }
 
-    /// Track when user clicks through to a source
     pub async fn track_source_click(&self, source: &str, item_id: &str) -> Result<(), sqlx::Error> {
         self.track(AnalyticsEvent::new(
             "source_click",
@@ -115,7 +105,6 @@ impl AnalyticsService {
         .await
     }
 
-    /// Track when user categorizes an item
     pub async fn track_categorization(
         &self,
         item_id: &str,
@@ -133,7 +122,6 @@ impl AnalyticsService {
         .await
     }
 
-    /// Get usage summary for a time period
     pub async fn get_summary(&self, days: i32) -> Result<UsageSummary, sqlx::Error> {
         let since = chrono::Utc::now().timestamp() - (days as i64 * 86400);
 
@@ -174,7 +162,6 @@ impl AnalyticsService {
         })
     }
 
-    /// Get event counts grouped by type
     pub async fn get_event_counts(
         &self,
         days: i32,
@@ -191,11 +178,9 @@ impl AnalyticsService {
         Ok(counts)
     }
 
-    /// Get sync performance metrics
     pub async fn get_sync_metrics(&self, days: i32) -> Result<SyncMetrics, sqlx::Error> {
         let since = chrono::Utc::now().timestamp() - (days as i64 * 86400);
 
-        // Get average duration
         let avg_duration: (Option<f64>,) = sqlx::query_as(
             r#"
             SELECT AVG(CAST(json_extract(event_data, '$.duration_ms') AS REAL))
@@ -207,7 +192,6 @@ impl AnalyticsService {
         .fetch_one(self.db.pool())
         .await?;
 
-        // Get total items synced
         let total_items: (Option<i64>,) = sqlx::query_as(
             r#"
             SELECT SUM(CAST(json_extract(event_data, '$.items_synced') AS INTEGER))
@@ -227,7 +211,6 @@ impl AnalyticsService {
     }
 }
 
-/// Sync performance metrics
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncMetrics {
     pub avg_duration_ms: i64,

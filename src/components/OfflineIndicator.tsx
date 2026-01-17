@@ -1,9 +1,6 @@
 import { WifiOff } from 'lucide-react'
 import { useConnectionStatus } from '../hooks/useConnectionStatus'
 
-/**
- * Shows a subtle indicator when the app is offline
- */
 export function OfflineIndicator() {
   const isOnline = useConnectionStatus()
 

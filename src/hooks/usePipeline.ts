@@ -57,9 +57,6 @@ export function getTaskIcon(taskType: PipelineTaskType): string {
   return taskTypeIcons[taskType] || '⚙️'
 }
 
-/**
- * Hook to track pipeline status and active tasks
- */
 export function usePipeline() {
   const [state, setState] = useState<PipelineState>({
     active_tasks: [],

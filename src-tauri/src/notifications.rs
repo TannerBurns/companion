@@ -1,11 +1,6 @@
-//! System notification service for Companion.
-//!
-//! Sends native notifications for digests, sync completion, and important items.
-
 use tauri::AppHandle;
 use tauri_plugin_notification::NotificationExt;
 
-/// Service for sending system notifications
 pub struct NotificationService {
     app_handle: AppHandle,
 }
@@ -15,7 +10,6 @@ impl NotificationService {
         Self { app_handle }
     }
 
-    /// Send notification when daily digest is ready
     pub fn notify_daily_digest(&self, item_count: i32) -> Result<(), String> {
         if item_count == 0 {
             return Ok(());
@@ -34,7 +28,6 @@ impl NotificationService {
             .map_err(|e| e.to_string())
     }
 
-    /// Send notification for high-importance items
     pub fn notify_important_item(&self, title: &str, source: &str) -> Result<(), String> {
         self.app_handle
             .notification()
@@ -45,7 +38,6 @@ impl NotificationService {
             .map_err(|e| e.to_string())
     }
 
-    /// Send notification when sync completes
     pub fn notify_sync_complete(&self, items_synced: i32) -> Result<(), String> {
         if items_synced > 0 {
             self.app_handle
@@ -64,7 +56,6 @@ impl NotificationService {
         }
     }
 
-    /// Send a generic notification
     pub fn notify(&self, title: &str, body: &str) -> Result<(), String> {
         self.app_handle
             .notification()
@@ -75,7 +66,6 @@ impl NotificationService {
             .map_err(|e| e.to_string())
     }
 
-    /// Send notification for weekly digest
     pub fn notify_weekly_digest(&self, item_count: i32) -> Result<(), String> {
         if item_count == 0 {
             return Ok(());
@@ -94,7 +84,6 @@ impl NotificationService {
             .map_err(|e| e.to_string())
     }
 
-    /// Send error notification
     pub fn notify_error(&self, source: &str, error: &str) -> Result<(), String> {
         self.app_handle
             .notification()

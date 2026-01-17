@@ -256,8 +256,6 @@ pub async fn select_atlassian_resource(
     Ok(())
 }
 
-// Analytics commands
-
 #[tauri::command]
 pub async fn track_event(
     state: State<'_, Arc<Mutex<AppState>>>,
@@ -306,8 +304,6 @@ pub async fn get_analytics_summary(
     let event_counts: std::collections::HashMap<_, _> = counts.into_iter().collect();
     Ok(AnalyticsSummary { event_counts, days })
 }
-
-// Pipeline commands
 
 #[tauri::command]
 pub async fn get_pipeline_status(

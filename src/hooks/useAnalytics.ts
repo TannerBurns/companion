@@ -1,17 +1,13 @@
 import { useCallback } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 
-/**
- * Hook to track analytics events
- */
 export function useAnalytics() {
   const trackEvent = useCallback(
     async (eventType: string, eventData: Record<string, unknown> = {}) => {
       try {
         await invoke('track_event', { eventType, eventData })
-      } catch (error) {
-        // Silently fail - analytics should not break the app
-        console.warn('Failed to track event:', error)
+      } catch {
+        // Analytics failures should not break the app
       }
     },
     []

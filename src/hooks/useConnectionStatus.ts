@@ -1,8 +1,5 @@
 import { useState, useEffect } from 'react'
 
-/**
- * Hook to track online/offline connection status
- */
 export function useConnectionStatus() {
   const [isOnline, setIsOnline] = useState(
     typeof navigator !== 'undefined' ? navigator.onLine : true

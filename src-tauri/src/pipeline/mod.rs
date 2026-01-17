@@ -1,18 +1,11 @@
-//! Pipeline status tracking for sync and AI processing operations.
-//! 
-//! This module tracks the progress of various background operations
-//! and exposes them for the system tray indicator.
-
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::RwLock;
 
-/// Maximum number of completed tasks to keep in history
 const MAX_HISTORY_SIZE: usize = 50;
 
-/// Represents a single pipeline task
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PipelineTask {
     pub id: String,
@@ -25,7 +18,6 @@ pub struct PipelineTask {
     pub error: Option<String>,
 }
 
-/// Types of pipeline tasks
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum PipelineTaskType {
@@ -64,7 +56,6 @@ impl PipelineTaskType {
     }
 }
 
-/// Status of a pipeline task
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskStatus {
@@ -74,7 +65,6 @@ pub enum TaskStatus {
     Failed,
 }
 
-/// Overall pipeline state
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PipelineState {
     pub active_tasks: Vec<PipelineTask>,
@@ -92,7 +82,6 @@ impl Default for PipelineState {
     }
 }
 
-/// Pipeline status manager
 pub struct PipelineManager {
     state: Arc<RwLock<PipelineStateInner>>,
     app_handle: Option<AppHandle>,
@@ -114,12 +103,10 @@ impl PipelineManager {
         }
     }
 
-    /// Set the app handle for emitting events
     pub fn set_app_handle(&mut self, app_handle: AppHandle) {
         self.app_handle = Some(app_handle);
     }
 
-    /// Start a new pipeline task
     pub async fn start_task(&self, task_type: PipelineTaskType, message: String) -> String {
         let id = uuid::Uuid::new_v4().to_string();
         let task = PipelineTask {
@@ -142,7 +129,6 @@ impl PipelineManager {
         id
     }
 
-    /// Update task progress
     pub async fn update_progress(&self, task_id: &str, progress: f32, message: Option<String>) {
         {
             let mut state = self.state.write().await;
@@ -156,12 +142,10 @@ impl PipelineManager {
         self.emit_update().await;
     }
 
-    /// Complete a task successfully
     pub async fn complete_task(&self, task_id: &str, message: Option<String>) {
         self.finish_task(task_id, TaskStatus::Completed, message, None).await;
     }
 
-    /// Mark a task as failed
     pub async fn fail_task(&self, task_id: &str, error: String) {
         self.finish_task(task_id, TaskStatus::Failed, None, Some(error)).await;
     }
@@ -185,7 +169,6 @@ impl PipelineManager {
                 }
                 task.error = error;
 
-                // Add to history
                 if state.history.len() >= MAX_HISTORY_SIZE {
                     state.history.pop_front();
                 }
@@ -195,7 +178,6 @@ impl PipelineManager {
         self.emit_update().await;
     }
 
-    /// Get current pipeline state
     pub async fn get_state(&self) -> PipelineState {
         let state = self.state.read().await;
         PipelineState {
@@ -205,7 +187,6 @@ impl PipelineManager {
         }
     }
 
-    /// Get a brief status message for the tray tooltip
     pub async fn get_status_message(&self) -> String {
         let state = self.state.read().await;
         if state.active_tasks.is_empty() {
@@ -218,13 +199,11 @@ impl PipelineManager {
         }
     }
 
-    /// Check if any tasks are running
     pub async fn is_busy(&self) -> bool {
         let state = self.state.read().await;
         !state.active_tasks.is_empty()
     }
 
-    /// Emit pipeline update event to frontend
     async fn emit_update(&self) {
         if let Some(app_handle) = &self.app_handle {
             let state = self.get_state().await;
@@ -246,23 +225,21 @@ mod tests {
     #[tokio::test]
     async fn test_pipeline_task_lifecycle() {
         let manager = PipelineManager::new();
-        
-        // Start a task
-        let task_id = manager.start_task(
-            PipelineTaskType::SyncSlack,
-            "Syncing messages".to_string()
-        ).await;
-        
+        let task_id = manager
+            .start_task(PipelineTaskType::SyncSlack, "Syncing messages".to_string())
+            .await;
+
         let state = manager.get_state().await;
         assert_eq!(state.active_tasks.len(), 1);
         assert!(state.is_busy);
-        
-        // Update progress
-        manager.update_progress(&task_id, 0.5, Some("50% complete".to_string())).await;
-        
-        // Complete task
-        manager.complete_task(&task_id, Some("Done".to_string())).await;
-        
+
+        manager
+            .update_progress(&task_id, 0.5, Some("50% complete".to_string()))
+            .await;
+        manager
+            .complete_task(&task_id, Some("Done".to_string()))
+            .await;
+
         let state = manager.get_state().await;
         assert_eq!(state.active_tasks.len(), 0);
         assert!(!state.is_busy);
