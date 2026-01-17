@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { format, subDays, addDays, isToday } from 'date-fns'
+import { format, subDays, addDays, isToday, isFuture } from 'date-fns'
 import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react'
 import { useDailyDigest } from '../hooks/useDigest'
 import { ContentCard } from '../components/ContentCard'
@@ -20,7 +20,7 @@ export function DailyDigestView() {
     item => filter === 'all' || item.category.toLowerCase() === filter
   ) ?? []
 
-  const canGoForward = !isToday(date)
+  const canGoForward = !isToday(date) && !isFuture(date)
 
   return (
     <div className="mx-auto max-w-4xl">
