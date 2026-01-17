@@ -1,17 +1,28 @@
+import { useState } from 'react'
 import { clsx } from 'clsx'
 import {
   ChevronLeft,
   Slack,
   FileText,
   Link2,
-  Circle,
   Bell,
   Clock,
   Palette,
+  Key,
+  Save,
+  RefreshCw,
+  Sun,
+  Moon,
+  Monitor,
+  Check,
 } from 'lucide-react'
 import { useAppStore } from '../store'
 import type { SettingsSection } from '../store'
 import { SourceCard } from '../components'
+import { Button } from '../components/ui/Button'
+import { Input } from '../components/ui/Input'
+import { useTheme } from '../lib/useTheme'
+import { usePreferences, useApiKey } from '../hooks/usePreferences'
 
 interface SettingsNavItemProps {
   icon: React.ComponentType<{ className?: string }>
@@ -63,11 +74,11 @@ function SourcesSettings() {
   ]
 
   const handleConnect = (sourceId: string) => {
-    console.log('Connect:', sourceId)
+    void sourceId // TODO: Implement OAuth connection flow
   }
 
   const handleDisconnect = (sourceId: string) => {
-    console.log('Disconnect:', sourceId)
+    void sourceId // TODO: Implement disconnect flow
   }
 
   return (
@@ -102,7 +113,7 @@ function SourcesSettings() {
             </h4>
             <p className="text-sm text-muted-foreground mt-1">
               You'll need to provide API credentials for each service. OAuth flows
-              will be implemented in Phase 2.
+              will guide you through the connection process.
             </p>
           </div>
         </div>
@@ -111,7 +122,92 @@ function SourcesSettings() {
   )
 }
 
+function ApiKeysSettings() {
+  const [geminiKey, setGeminiKey] = useState('')
+  const { saveApiKey, isSaving, isSuccess } = useApiKey()
+
+  const handleSaveGemini = () => {
+    if (geminiKey.trim()) {
+      saveApiKey('gemini', geminiKey.trim())
+      setGeminiKey('')
+    }
+  }
+
+  return (
+    <div>
+      <div className="mb-6">
+        <h3 className="text-lg font-semibold text-foreground">API Keys</h3>
+        <p className="text-sm text-muted-foreground mt-1">
+          Configure API keys for external services.
+        </p>
+      </div>
+
+      <div className="space-y-6">
+        <div className="p-4 bg-card border border-border rounded-lg">
+          <div className="flex items-center gap-2 mb-3">
+            <Key className="h-4 w-4 text-muted-foreground" />
+            <h4 className="font-medium text-foreground">Gemini API Key</h4>
+          </div>
+          <p className="text-sm text-muted-foreground mb-3">
+            Required for AI-powered summarization and categorization.
+          </p>
+          <div className="flex gap-2">
+            <Input
+              type="password"
+              value={geminiKey}
+              onChange={e => setGeminiKey(e.target.value)}
+              placeholder="Enter your Gemini API key"
+              className="flex-1"
+            />
+            <Button
+              onClick={handleSaveGemini}
+              disabled={isSaving || !geminiKey.trim()}
+            >
+              {isSaving ? (
+                <RefreshCw className="h-4 w-4 animate-spin" />
+              ) : isSuccess ? (
+                <Check className="h-4 w-4" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+              Save
+            </Button>
+          </div>
+          {isSuccess && (
+            <p className="mt-2 text-sm text-green-600 dark:text-green-400">
+              API key saved successfully!
+            </p>
+          )}
+        </div>
+
+        <div className="p-4 bg-muted/50 rounded-lg">
+          <p className="text-sm text-muted-foreground">
+            Get your Gemini API key from the{' '}
+            <a
+              href="https://aistudio.google.com/app/apikey"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary-500 hover:underline"
+            >
+              Google AI Studio
+            </a>
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function NotificationsSettings() {
+  const { preferences, save, isSaving } = usePreferences()
+  const notificationsEnabled = preferences?.notificationsEnabled ?? false
+
+  const handleToggle = () => {
+    if (preferences) {
+      save({ ...preferences, notificationsEnabled: !notificationsEnabled })
+    }
+  }
+
   return (
     <div>
       <div className="mb-6">
@@ -124,7 +220,7 @@ function NotificationsSettings() {
       <div className="space-y-4">
         <div className="flex items-center justify-between p-4 bg-card border border-border rounded-lg">
           <div className="flex items-center gap-3">
-            <Circle className="h-5 w-5 text-muted-foreground" />
+            <Bell className="h-5 w-5 text-muted-foreground" />
             <div>
               <h4 className="font-medium text-foreground">
                 Daily Digest Notification
@@ -134,7 +230,21 @@ function NotificationsSettings() {
               </p>
             </div>
           </div>
-          <button className="text-sm text-muted-foreground">Coming soon</button>
+          <button
+            onClick={handleToggle}
+            disabled={isSaving}
+            className={clsx(
+              'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
+              notificationsEnabled ? 'bg-primary-500' : 'bg-gray-300 dark:bg-gray-600'
+            )}
+          >
+            <span
+              className={clsx(
+                'inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
+                notificationsEnabled ? 'translate-x-6' : 'translate-x-1'
+              )}
+            />
+          </button>
         </div>
       </div>
     </div>
@@ -142,6 +252,15 @@ function NotificationsSettings() {
 }
 
 function SyncSettings() {
+  const { preferences, save, isSaving } = usePreferences()
+  const syncInterval = preferences?.syncIntervalMinutes ?? 15
+
+  const handleIntervalChange = (value: number) => {
+    if (preferences) {
+      save({ ...preferences, syncIntervalMinutes: value })
+    }
+  }
+
   return (
     <div>
       <div className="mb-6">
@@ -152,9 +271,9 @@ function SyncSettings() {
       </div>
 
       <div className="space-y-4">
-        <div className="flex items-center justify-between p-4 bg-card border border-border rounded-lg">
-          <div className="flex items-center gap-3">
-            <Circle className="h-5 w-5 text-muted-foreground" />
+        <div className="p-4 bg-card border border-border rounded-lg">
+          <div className="flex items-center gap-3 mb-3">
+            <Clock className="h-5 w-5 text-muted-foreground" />
             <div>
               <h4 className="font-medium text-foreground">Sync Interval</h4>
               <p className="text-sm text-muted-foreground">
@@ -162,7 +281,41 @@ function SyncSettings() {
               </p>
             </div>
           </div>
-          <button className="text-sm text-muted-foreground">Coming soon</button>
+          <select
+            value={syncInterval}
+            onChange={e => handleIntervalChange(Number(e.target.value))}
+            disabled={isSaving}
+            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary-500"
+          >
+            <option value={5}>Every 5 minutes</option>
+            <option value={15}>Every 15 minutes</option>
+            <option value={30}>Every 30 minutes</option>
+            <option value={60}>Every hour</option>
+          </select>
+        </div>
+
+        <div className="p-4 bg-card border border-border rounded-lg">
+          <h4 className="font-medium text-foreground mb-3">Enabled Sources</h4>
+          <div className="flex flex-wrap gap-3">
+            {['slack', 'jira', 'confluence'].map(source => (
+              <label key={source} className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={preferences?.enabledSources?.includes(source) ?? false}
+                  onChange={e => {
+                    if (preferences) {
+                      const sources = e.target.checked
+                        ? [...(preferences.enabledSources || []), source]
+                        : preferences.enabledSources?.filter(s => s !== source) || []
+                      save({ ...preferences, enabledSources: sources })
+                    }
+                  }}
+                  className="h-4 w-4 rounded border-border text-primary-500 focus:ring-primary-500"
+                />
+                <span className="text-sm capitalize text-foreground">{source}</span>
+              </label>
+            ))}
+          </div>
         </div>
       </div>
     </div>
@@ -170,6 +323,14 @@ function SyncSettings() {
 }
 
 function AppearanceSettings() {
+  const { theme, setTheme } = useTheme()
+
+  const themeOptions = [
+    { value: 'light' as const, label: 'Light', icon: Sun },
+    { value: 'dark' as const, label: 'Dark', icon: Moon },
+    { value: 'system' as const, label: 'System', icon: Monitor },
+  ]
+
   return (
     <div>
       <div className="mb-6">
@@ -180,9 +341,9 @@ function AppearanceSettings() {
       </div>
 
       <div className="space-y-4">
-        <div className="flex items-center justify-between p-4 bg-card border border-border rounded-lg">
-          <div className="flex items-center gap-3">
-            <Circle className="h-5 w-5 text-muted-foreground" />
+        <div className="p-4 bg-card border border-border rounded-lg">
+          <div className="flex items-center gap-3 mb-4">
+            <Palette className="h-5 w-5 text-muted-foreground" />
             <div>
               <h4 className="font-medium text-foreground">Theme</h4>
               <p className="text-sm text-muted-foreground">
@@ -190,7 +351,24 @@ function AppearanceSettings() {
               </p>
             </div>
           </div>
-          <button className="text-sm text-muted-foreground">Coming soon</button>
+
+          <div className="flex gap-2">
+            {themeOptions.map(({ value, label, icon: Icon }) => (
+              <button
+                key={value}
+                onClick={() => setTheme(value)}
+                className={clsx(
+                  'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+                  theme === value
+                    ? 'bg-primary-500 text-white'
+                    : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                )}
+              >
+                <Icon className="h-4 w-4" />
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
     </div>
@@ -203,6 +381,7 @@ const SETTINGS_SECTIONS: Array<{
   label: string
 }> = [
   { id: 'sources', icon: Link2, label: 'Sources' },
+  { id: 'api-keys', icon: Key, label: 'API Keys' },
   { id: 'notifications', icon: Bell, label: 'Notifications' },
   { id: 'sync', icon: Clock, label: 'Sync' },
   { id: 'appearance', icon: Palette, label: 'Appearance' },
@@ -215,6 +394,8 @@ export function SettingsView() {
     switch (settingsSection) {
       case 'sources':
         return <SourcesSettings />
+      case 'api-keys':
+        return <ApiKeysSettings />
       case 'notifications':
         return <NotificationsSettings />
       case 'sync':

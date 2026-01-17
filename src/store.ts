@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 
 export type View = 'daily-digest' | 'weekly-summary' | 'settings'
-export type SettingsSection = 'sources' | 'notifications' | 'sync' | 'appearance'
+export type SettingsSection = 'sources' | 'api-keys' | 'notifications' | 'sync' | 'appearance'
 
 export interface AppStore {
   currentView: View

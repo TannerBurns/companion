@@ -1,9 +1,17 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { ThemeProvider } from './lib/ThemeProvider'
 import { useAppStore } from './store'
 import { Layout } from './components'
 import { DailyDigestView, WeeklySummaryView, SettingsView } from './views'
 
-const queryClient = new QueryClient()
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  },
+})
 
 function MainContent() {
   const { currentView } = useAppStore()
@@ -23,9 +31,11 @@ function MainContent() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <Layout>
-        <MainContent />
-      </Layout>
+      <ThemeProvider>
+        <Layout>
+          <MainContent />
+        </Layout>
+      </ThemeProvider>
     </QueryClientProvider>
   )
 }
