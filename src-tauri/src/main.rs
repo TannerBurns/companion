@@ -46,6 +46,9 @@ fn main() {
             commands::save_api_key,
             commands::get_preferences,
             commands::save_preferences,
+            commands::connect_slack,
+            commands::connect_atlassian,
+            commands::select_atlassian_resource,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

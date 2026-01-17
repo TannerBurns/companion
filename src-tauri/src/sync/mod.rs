@@ -1,4 +1,11 @@
+//! Data synchronization module
+
+pub mod oauth;
 pub mod slack;
 pub mod atlassian;
+pub mod background;
 
-// Will be implemented in Phase 2
+// Re-export commonly used types
+pub use slack::{SlackClient, SlackSyncService, SlackTokens, SyncResult};
+pub use atlassian::{AtlassianClient, AtlassianSyncService, AtlassianTokens, CloudResource};
+pub use background::BackgroundSyncService;
