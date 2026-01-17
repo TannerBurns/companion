@@ -32,6 +32,9 @@ export function DailyDigestView() {
   }, [])
 
   const handleSync = () => {
+    if (syncTimeoutRef.current) {
+      clearTimeout(syncTimeoutRef.current)
+    }
     sync(undefined)
     syncTimeoutRef.current = setTimeout(() => refetch(), 1000)
   }

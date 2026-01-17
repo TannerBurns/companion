@@ -10,9 +10,9 @@ export function ImportanceIndicator({ score, showLabel = false, className }: Imp
   const level = score >= 0.8 ? 'high' : score >= 0.5 ? 'medium' : 'low'
 
   const levelColors = {
-    high: 'text-red-500',
-    medium: 'text-yellow-500',
-    low: 'text-gray-400',
+    high: { text: 'text-red-500', bg: 'bg-red-500' },
+    medium: { text: 'text-yellow-500', bg: 'bg-yellow-500' },
+    low: { text: 'text-gray-400', bg: 'bg-gray-400' },
   }
 
   const levelLabels = {
@@ -29,16 +29,15 @@ export function ImportanceIndicator({ score, showLabel = false, className }: Imp
             key={i}
             className={clsx(
               'h-1.5 w-1.5 rounded-full',
-              i === 0 && levelColors[level],
-              i === 0 && 'bg-current',
-              i === 1 && (level !== 'low' ? `${levelColors[level]} bg-current` : 'bg-gray-300 dark:bg-gray-600'),
-              i === 2 && (level === 'high' ? `${levelColors[level]} bg-current` : 'bg-gray-300 dark:bg-gray-600')
+              i === 0 && levelColors[level].bg,
+              i === 1 && (level !== 'low' ? levelColors[level].bg : 'bg-gray-300 dark:bg-gray-600'),
+              i === 2 && (level === 'high' ? levelColors[level].bg : 'bg-gray-300 dark:bg-gray-600')
             )}
           />
         ))}
       </div>
       {showLabel && (
-        <span className={clsx('text-xs font-medium', levelColors[level])}>
+        <span className={clsx('text-xs font-medium', levelColors[level].text)}>
           {levelLabels[level]}
         </span>
       )}
