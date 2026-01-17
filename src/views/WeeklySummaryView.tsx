@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import {
   format,
   startOfWeek,
@@ -8,8 +8,8 @@ import {
   eachDayOfInterval,
   isSameDay,
 } from 'date-fns'
-import { ChevronLeft, ChevronRight, RefreshCw, Calendar } from 'lucide-react'
-import { useWeeklyDigest, useSync } from '../hooks/useDigest'
+import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react'
+import { useWeeklyDigest } from '../hooks/useDigest'
 import { ContentCard } from '../components/ContentCard'
 import { Button } from '../components/ui/Button'
 import { useAppStore } from '../store'
@@ -29,26 +29,7 @@ export function WeeklySummaryView() {
 
   const weekStartStr = format(weekStart, 'yyyy-MM-dd')
   const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 })
-  const { data, isLoading, error, refetch } = useWeeklyDigest(weekStartStr)
-  const { sync, isSyncing } = useSync()
-
-  const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  useEffect(() => {
-    return () => {
-      if (syncTimeoutRef.current) {
-        clearTimeout(syncTimeoutRef.current)
-      }
-    }
-  }, [])
-
-  const handleSync = () => {
-    if (syncTimeoutRef.current) {
-      clearTimeout(syncTimeoutRef.current)
-    }
-    sync(undefined)
-    syncTimeoutRef.current = setTimeout(() => refetch(), 1000)
-  }
+  const { data, isLoading, error } = useWeeklyDigest(weekStartStr)
 
   // Filter items by category
   const filteredItems = useMemo(() => {
@@ -73,7 +54,7 @@ export function WeeklySummaryView() {
   return (
     <div className="mx-auto max-w-4xl">
       {/* Header */}
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex items-center justify-center">
         <div className="flex items-center gap-2">
           <button
             onClick={() => setWeekStart(d => subWeeks(d, 1))}
@@ -98,16 +79,6 @@ export function WeeklySummaryView() {
             <ChevronRight className="h-5 w-5 text-foreground" />
           </button>
         </div>
-
-        <Button
-          onClick={handleSync}
-          disabled={isSyncing}
-          variant="default"
-          size="md"
-        >
-          <RefreshCw className={`h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
-          {isSyncing ? 'Syncing...' : 'Sync'}
-        </Button>
       </div>
 
       {/* Category Filter */}
@@ -165,15 +136,11 @@ export function WeeklySummaryView() {
           <h3 className="text-lg font-semibold text-foreground mb-2">
             {filter === 'all' ? 'No items this week' : `No ${filter} items this week`}
           </h3>
-          <p className="text-muted-foreground max-w-sm mx-auto mb-6">
+          <p className="text-muted-foreground max-w-sm mx-auto">
             {filter === 'all'
-              ? 'Sync your accounts to get the latest updates.'
-              : 'Try selecting a different category or sync for new updates.'}
+              ? 'Use the sync button in the header to get the latest updates.'
+              : 'Try selecting a different category.'}
           </p>
-          <Button onClick={handleSync} disabled={isSyncing}>
-            <RefreshCw className={`h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
-            Sync now
-          </Button>
         </div>
       ) : (
         /* Vertical Timeline */

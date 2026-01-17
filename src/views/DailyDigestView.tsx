@@ -1,7 +1,7 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState } from 'react'
 import { format, subDays, addDays, isToday } from 'date-fns'
-import { ChevronLeft, ChevronRight, RefreshCw, Calendar } from 'lucide-react'
-import { useDailyDigest, useSync } from '../hooks/useDigest'
+import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react'
+import { useDailyDigest } from '../hooks/useDigest'
 import { ContentCard } from '../components/ContentCard'
 import { Button } from '../components/ui/Button'
 import { useAppStore } from '../store'
@@ -14,37 +14,18 @@ export function DailyDigestView() {
   const [filter, setFilter] = useState<string>('all')
 
   const dateStr = format(date, 'yyyy-MM-dd')
-  const { data, isLoading, error, refetch } = useDailyDigest(dateStr)
-  const { sync, isSyncing } = useSync()
+  const { data, isLoading, error } = useDailyDigest(dateStr)
 
   const filteredItems = data?.items.filter(
     item => filter === 'all' || item.category.toLowerCase() === filter
   ) ?? []
-
-  const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  useEffect(() => {
-    return () => {
-      if (syncTimeoutRef.current) {
-        clearTimeout(syncTimeoutRef.current)
-      }
-    }
-  }, [])
-
-  const handleSync = () => {
-    if (syncTimeoutRef.current) {
-      clearTimeout(syncTimeoutRef.current)
-    }
-    sync(undefined)
-    syncTimeoutRef.current = setTimeout(() => refetch(), 1000)
-  }
 
   const canGoForward = !isToday(date)
 
   return (
     <div className="mx-auto max-w-4xl">
       {/* Header */}
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex items-center justify-center">
         <div className="flex items-center gap-2">
           <button
             onClick={() => setDate(d => subDays(d, 1))}
@@ -70,16 +51,6 @@ export function DailyDigestView() {
             <ChevronRight className="h-5 w-5 text-foreground" />
           </button>
         </div>
-
-        <Button
-          onClick={handleSync}
-          disabled={isSyncing}
-          variant="default"
-          size="md"
-        >
-          <RefreshCw className={`h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
-          {isSyncing ? 'Syncing...' : 'Sync'}
-        </Button>
       </div>
 
       {/* Category Filter */}
@@ -137,16 +108,11 @@ export function DailyDigestView() {
           <h3 className="text-lg font-semibold text-foreground mb-2">
             {filter === 'all' ? 'No items for this day' : `No ${filter} items`}
           </h3>
-          <p className="text-muted-foreground max-w-sm mx-auto mb-6">
+          <p className="text-muted-foreground max-w-sm mx-auto">
             {filter === 'all'
-              ? 'Sync your accounts to get the latest updates.'
-              : 'Try selecting a different category or sync for new updates.'
-            }
+              ? 'Use the sync button in the header to get the latest updates.'
+              : 'Try selecting a different category.'}
           </p>
-          <Button onClick={handleSync} disabled={isSyncing}>
-            <RefreshCw className={`h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
-            Sync now
-          </Button>
         </div>
       ) : (
         <div className="grid gap-4">
@@ -156,8 +122,8 @@ export function DailyDigestView() {
         </div>
       )}
 
-      {/* Category Summary Cards - show when no filter */}
-      {!isLoading && !error && filter === 'all' && data?.categories && data.categories.length > 0 && filteredItems.length === 0 && (
+      {/* Category Summary Cards - show when items exist and no filter applied */}
+      {!isLoading && !error && filter === 'all' && data?.items && data.items.length > 0 && data?.categories && data.categories.length > 0 && (
         <div className="mt-8 grid grid-cols-2 gap-4">
           {data.categories.map((cat) => (
             <div
