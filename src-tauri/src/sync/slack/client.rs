@@ -2,7 +2,7 @@
 
 use reqwest::Client;
 use super::types::{SlackError, SlackTokens, SlackChannel, SlackMessage, OAuthResponse};
-use crate::sync::oauth::spawn_oauth_callback_listener_ready;
+use crate::sync::oauth::spawn_oauth_callback_listener;
 
 const SLACK_AUTHORIZE_URL: &str = "https://slack.com/oauth/v2/authorize";
 const SLACK_TOKEN_URL: &str = "https://slack.com/api/oauth.v2.access";
@@ -61,8 +61,7 @@ impl SlackClient {
         let state = uuid::Uuid::new_v4().to_string();
         let auth_url = self.get_auth_url(&state);
         
-        // Bind the callback listener BEFORE opening the browser to avoid race conditions
-        let rx = spawn_oauth_callback_listener_ready(REDIRECT_PORT, state).await
+        let rx = spawn_oauth_callback_listener(REDIRECT_PORT, state).await
             .map_err(|e| SlackError::OAuth(format!("Failed to start callback listener: {}", e)))?;
         
         open::that(&auth_url).map_err(|e| SlackError::OAuth(e.to_string()))?;

@@ -45,27 +45,9 @@ pub async fn wait_for_oauth_callback(
 /// Spawns the OAuth callback listener in a background task and returns a receiver
 /// for the authorization code.
 /// 
-/// DEPRECATED: Use `spawn_oauth_callback_listener_ready` instead to avoid race conditions.
-/// This function spawns the listener but doesn't guarantee the port is bound before returning.
-pub fn spawn_oauth_callback_listener(
-    port: u16,
-    expected_state: String,
-) -> oneshot::Receiver<Result<String, OAuthCallbackError>> {
-    let (tx, rx) = oneshot::channel();
-    
-    tokio::spawn(async move {
-        let result = wait_for_oauth_callback(port, expected_state, None).await;
-        let _ = tx.send(result.map(|r| r.code));
-    });
-    
-    rx
-}
-
-/// Binds the OAuth callback listener to the port and returns a receiver for the authorization code.
-/// 
-/// Unlike `spawn_oauth_callback_listener`, this function ensures the listener is bound to the port
-/// before returning, eliminating race conditions when opening the browser afterwards.
-pub async fn spawn_oauth_callback_listener_ready(
+/// This function binds the listener to the port before returning, ensuring no race
+/// conditions when opening the browser afterwards.
+pub async fn spawn_oauth_callback_listener(
     port: u16,
     expected_state: String,
 ) -> Result<oneshot::Receiver<Result<String, OAuthCallbackError>>, OAuthCallbackError> {

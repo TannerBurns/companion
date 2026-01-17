@@ -90,7 +90,7 @@ impl ProcessingPipeline {
                 &body_text,
             ),
             ("jira", "ticket") => prompts::jira_issue_prompt(
-                title.as_deref().unwrap_or(""),
+                id,  // Jira issue key (e.g., "PROJ-123")
                 title.as_deref().unwrap_or(""),
                 &body_text,
             ),
@@ -132,12 +132,14 @@ impl ProcessingPipeline {
 
     /// Generate daily digest
     pub async fn generate_daily_digest(&self, date: &str) -> Result<String, String> {
-        let start_ts = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
-            .map_err(|e| e.to_string())?
-            .and_hms_opt(0, 0, 0).unwrap()
+        let parsed_date = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+            .map_err(|e| e.to_string())?;
+        let start_ts = parsed_date
+            .and_hms_opt(0, 0, 0)
+            .ok_or_else(|| format!("Invalid date: {}", date))?
             .and_utc()
-            .timestamp();
-        let end_ts = start_ts + 86400;
+            .timestamp_millis();  // Use milliseconds to match content_items.created_at
+        let end_ts = start_ts + 86400 * 1000;  // 24 hours in milliseconds
 
         let items: Vec<(String, String, Option<String>, f64)> = sqlx::query_as(
             "SELECT s.summary, s.category, s.highlights, s.importance_score
