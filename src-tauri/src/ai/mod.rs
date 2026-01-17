@@ -1,4 +1,7 @@
 pub mod gemini;
 pub mod prompts;
+pub mod pipeline;
 
-// Will be implemented in Phase 3
+pub use gemini::GeminiClient;
+pub use pipeline::ProcessingPipeline;
+pub use prompts::{SummaryResult, DigestSummary};

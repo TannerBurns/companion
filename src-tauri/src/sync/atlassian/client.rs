@@ -7,7 +7,7 @@ use rand::RngCore;
 use serde::Deserialize;
 
 use super::types::{AtlassianError, AtlassianTokens, CloudResource, JiraIssue, ConfluencePage};
-use crate::sync::oauth::spawn_oauth_callback_listener;
+use crate::sync::oauth::spawn_oauth_callback_listener_ready;
 
 const ATLASSIAN_AUTHORIZE_URL: &str = "https://auth.atlassian.com/authorize";
 const ATLASSIAN_TOKEN_URL: &str = "https://auth.atlassian.com/oauth/token";
@@ -78,8 +78,11 @@ impl AtlassianClient {
         let (code_verifier, code_challenge) = Self::generate_pkce();
         let auth_url = self.get_auth_url(&state, &code_challenge);
         
+        // Bind the callback listener BEFORE opening the browser to avoid race conditions
+        let rx = spawn_oauth_callback_listener_ready(REDIRECT_PORT, state).await
+            .map_err(|e| AtlassianError::OAuth(format!("Failed to start callback listener: {}", e)))?;
+        
         open::that(&auth_url).map_err(|e| AtlassianError::OAuth(e.to_string()))?;
-        let rx = spawn_oauth_callback_listener(REDIRECT_PORT, state);
         
         let code = rx.await
             .map_err(|_| AtlassianError::OAuth("Callback cancelled".into()))?

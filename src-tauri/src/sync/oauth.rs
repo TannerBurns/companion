@@ -39,7 +39,54 @@ pub async fn wait_for_oauth_callback(
     timeout_secs: Option<u64>,
 ) -> Result<CallbackResult, OAuthCallbackError> {
     let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).await?;
+    handle_oauth_callback(listener, expected_state, timeout_secs).await
+}
+
+/// Spawns the OAuth callback listener in a background task and returns a receiver
+/// for the authorization code.
+/// 
+/// DEPRECATED: Use `spawn_oauth_callback_listener_ready` instead to avoid race conditions.
+/// This function spawns the listener but doesn't guarantee the port is bound before returning.
+pub fn spawn_oauth_callback_listener(
+    port: u16,
+    expected_state: String,
+) -> oneshot::Receiver<Result<String, OAuthCallbackError>> {
+    let (tx, rx) = oneshot::channel();
     
+    tokio::spawn(async move {
+        let result = wait_for_oauth_callback(port, expected_state, None).await;
+        let _ = tx.send(result.map(|r| r.code));
+    });
+    
+    rx
+}
+
+/// Binds the OAuth callback listener to the port and returns a receiver for the authorization code.
+/// 
+/// Unlike `spawn_oauth_callback_listener`, this function ensures the listener is bound to the port
+/// before returning, eliminating race conditions when opening the browser afterwards.
+pub async fn spawn_oauth_callback_listener_ready(
+    port: u16,
+    expected_state: String,
+) -> Result<oneshot::Receiver<Result<String, OAuthCallbackError>>, OAuthCallbackError> {
+    let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).await?;
+    
+    let (tx, rx) = oneshot::channel();
+    
+    tokio::spawn(async move {
+        let result = handle_oauth_callback(listener, expected_state, None).await;
+        let _ = tx.send(result.map(|r| r.code));
+    });
+    
+    Ok(rx)
+}
+
+/// Handle OAuth callback on an already-bound listener.
+async fn handle_oauth_callback(
+    listener: TcpListener,
+    expected_state: String,
+    timeout_secs: Option<u64>,
+) -> Result<CallbackResult, OAuthCallbackError> {
     let timeout_duration = Duration::from_secs(timeout_secs.unwrap_or(OAUTH_TIMEOUT_SECS));
     let accept_result = timeout(timeout_duration, listener.accept()).await;
     
@@ -68,22 +115,6 @@ pub async fn wait_for_oauth_callback(
     socket.write_all(success_response.as_bytes()).await?;
     
     Ok(CallbackResult { code })
-}
-
-/// Spawns the OAuth callback listener in a background task and returns a receiver
-/// for the authorization code.
-pub fn spawn_oauth_callback_listener(
-    port: u16,
-    expected_state: String,
-) -> oneshot::Receiver<Result<String, OAuthCallbackError>> {
-    let (tx, rx) = oneshot::channel();
-    
-    tokio::spawn(async move {
-        let result = wait_for_oauth_callback(port, expected_state, None).await;
-        let _ = tx.send(result.map(|r| r.code));
-    });
-    
-    rx
 }
 
 /// Parse authorization code and state from an OAuth callback request
@@ -156,5 +187,50 @@ mod tests {
         let request = "GET /callback HTTP/1.1\r\nHost: localhost";
         let result = parse_oauth_callback(request);
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_oauth_callback_missing_code() {
+        let request = "GET /callback?state=xyz789 HTTP/1.1\r\nHost: localhost";
+        let result = parse_oauth_callback(request);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_oauth_callback_missing_state() {
+        let request = "GET /callback?code=abc123 HTTP/1.1\r\nHost: localhost";
+        let result = parse_oauth_callback(request);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_oauth_callback_error_display() {
+        let err = OAuthCallbackError::Timeout;
+        assert_eq!(err.to_string(), "Timeout waiting for OAuth callback");
+
+        let err = OAuthCallbackError::StateMismatch;
+        assert_eq!(err.to_string(), "State mismatch");
+
+        let err = OAuthCallbackError::Cancelled;
+        assert_eq!(err.to_string(), "Callback cancelled");
+
+        let err = OAuthCallbackError::InvalidCallback("bad request".into());
+        assert_eq!(err.to_string(), "Invalid callback: bad request");
+    }
+
+    #[test]
+    fn test_build_success_response_is_valid_http() {
+        let response = build_success_response();
+        assert!(response.starts_with("HTTP/1.1 200 OK"));
+        assert!(response.contains("Content-Type: text/html"));
+        assert!(response.contains("Authorization Successful"));
+    }
+
+    #[test]
+    fn test_build_error_response_is_valid_http() {
+        let response = build_error_response("Test error message");
+        assert!(response.starts_with("HTTP/1.1 400 Bad Request"));
+        assert!(response.contains("Content-Type: text/html"));
+        assert!(response.contains("Test error message"));
     }
 }

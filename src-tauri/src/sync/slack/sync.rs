@@ -70,7 +70,7 @@ impl SlackSyncService {
     }
     
     async fn update_sync_cursor(&self, channel_id: &str, cursor: &str) -> Result<(), SlackError> {
-        let now = chrono::Utc::now().timestamp();
+        let now = chrono::Utc::now().timestamp_millis();
         
         sqlx::query(
             "INSERT INTO sync_state (id, source, resource_type, resource_id, last_sync_at, cursor, status)
@@ -91,7 +91,7 @@ impl SlackSyncService {
     }
     
     async fn store_message(&self, channel: &SlackChannel, msg: &SlackMessage) -> Result<(), SlackError> {
-        let now = chrono::Utc::now().timestamp();
+        let now = chrono::Utc::now().timestamp_millis();
         let ts_float: f64 = msg.ts.parse().unwrap_or(0.0);
         let created_at = (ts_float * 1000.0) as i64;
         let encrypted_body = self.crypto
