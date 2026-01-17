@@ -1,34 +1,182 @@
-import { Calendar } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import {
+  format,
+  startOfWeek,
+  subWeeks,
+  addWeeks,
+  endOfWeek,
+  eachDayOfInterval,
+  isSameDay,
+} from 'date-fns'
+import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react'
+import { useWeeklyDigest } from '../hooks/useDigest'
+import { ContentCard } from '../components/ContentCard'
+import { Button } from '../components/ui/Button'
 import { useAppStore } from '../store'
+import type { DigestItem } from '../lib/api'
+
+const CATEGORIES = ['all', 'engineering', 'product', 'sales', 'marketing', 'research', 'other'] as const
+
+interface DayGroup {
+  date: Date
+  items: DigestItem[]
+}
 
 export function WeeklySummaryView() {
   const { setView } = useAppStore()
+  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }))
+  const [filter, setFilter] = useState<string>('all')
+
+  const weekStartStr = format(weekStart, 'yyyy-MM-dd')
+  const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 })
+  const { data, isLoading, error } = useWeeklyDigest(weekStartStr)
+
+  // Filter items by category
+  const filteredItems = useMemo(() => {
+    const items = data?.items ?? []
+    if (filter === 'all') return items
+    return items.filter(item => item.category.toLowerCase() === filter)
+  }, [data?.items, filter])
+
+  // Group filtered items by day (newest first)
+  const dayGroups = useMemo((): DayGroup[] => {
+    const days = eachDayOfInterval({ start: weekStart, end: weekEnd }).reverse()
+    return days
+      .map(date => ({
+        date,
+        items: filteredItems.filter(item => isSameDay(new Date(item.createdAt), date)),
+      }))
+      .filter(group => group.items.length > 0)
+  }, [filteredItems, weekStart, weekEnd])
+
+  const totalItems = filteredItems.length
 
   return (
-    <div className="max-w-4xl mx-auto">
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-foreground">Weekly Summary</h2>
-        <p className="text-muted-foreground mt-1">Overview of the past 7 days</p>
+    <div className="mx-auto max-w-4xl">
+      {/* Header */}
+      <div className="mb-6 flex items-center justify-center">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setWeekStart(d => subWeeks(d, 1))}
+            className="rounded-lg p-2 hover:bg-muted transition-colors"
+            aria-label="Previous week"
+          >
+            <ChevronLeft className="h-5 w-5 text-foreground" />
+          </button>
+
+          <div className="text-center min-w-[240px]">
+            <h2 className="text-2xl font-bold text-foreground">Weekly Summary</h2>
+            <p className="text-muted-foreground">
+              {format(weekStart, 'MMM d')} - {format(weekEnd, 'MMM d, yyyy')}
+            </p>
+          </div>
+
+          <button
+            onClick={() => setWeekStart(d => addWeeks(d, 1))}
+            className="rounded-lg p-2 hover:bg-muted transition-colors"
+            aria-label="Next week"
+          >
+            <ChevronRight className="h-5 w-5 text-foreground" />
+          </button>
+        </div>
       </div>
 
-      {/* Empty State */}
-      <div className="bg-card border border-border rounded-xl p-12 text-center">
-        <div className="mx-auto w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
-          <Calendar className="h-8 w-8 text-muted-foreground" />
-        </div>
-        <h3 className="text-lg font-semibold text-foreground mb-2">
-          No weekly summary yet
-        </h3>
-        <p className="text-muted-foreground max-w-sm mx-auto mb-6">
-          Connect your accounts and sync data to generate weekly summaries.
-        </p>
-        <button
-          onClick={() => setView('settings')}
-          className="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors font-medium"
-        >
-          Connect Accounts
-        </button>
+      {/* Category Filter */}
+      <div className="mb-6 flex flex-wrap gap-2">
+        {CATEGORIES.map(cat => {
+          const count = cat === 'all'
+            ? data?.items.length ?? 0
+            : data?.items.filter(item => item.category.toLowerCase() === cat).length ?? 0
+
+          return (
+            <button
+              key={cat}
+              onClick={() => setFilter(cat)}
+              className={`rounded-full px-3 py-1.5 text-sm font-medium transition-colors ${
+                filter === cat
+                  ? 'bg-primary-500 text-white'
+                  : 'bg-muted text-muted-foreground hover:bg-muted/80'
+              }`}
+            >
+              {cat.charAt(0).toUpperCase() + cat.slice(1)}
+              {count > 0 && (
+                <span className="ml-1 opacity-70">({count})</span>
+              )}
+            </button>
+          )
+        })}
       </div>
+
+      {/* Content */}
+      {isLoading ? (
+        <div className="flex h-64 items-center justify-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-500 border-t-transparent" />
+        </div>
+      ) : error ? (
+        <div className="bg-card border border-border rounded-xl p-12 text-center">
+          <div className="mx-auto w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
+            <Calendar className="h-8 w-8 text-muted-foreground" />
+          </div>
+          <h3 className="text-lg font-semibold text-foreground mb-2">
+            No weekly summary available
+          </h3>
+          <p className="text-muted-foreground max-w-sm mx-auto mb-6">
+            Connect your Slack and Atlassian accounts to start receiving AI-powered
+            summaries of your work.
+          </p>
+          <Button onClick={() => setView('settings')}>
+            Connect Accounts
+          </Button>
+        </div>
+      ) : totalItems === 0 ? (
+        <div className="bg-card border border-border rounded-xl p-12 text-center">
+          <div className="mx-auto w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
+            <Calendar className="h-8 w-8 text-muted-foreground" />
+          </div>
+          <h3 className="text-lg font-semibold text-foreground mb-2">
+            {filter === 'all' ? 'No items this week' : `No ${filter} items this week`}
+          </h3>
+          <p className="text-muted-foreground max-w-sm mx-auto">
+            {filter === 'all'
+              ? 'Use the sync button in the header to get the latest updates.'
+              : 'Try selecting a different category.'}
+          </p>
+        </div>
+      ) : (
+        /* Vertical Timeline */
+        <div className="relative">
+          {/* Timeline line */}
+          <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-border" />
+
+          <div className="space-y-8">
+            {dayGroups.map(({ date, items }) => (
+              <div key={date.toISOString()} className="relative">
+                {/* Day header with dot */}
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="relative z-10 flex h-8 w-8 items-center justify-center rounded-full bg-primary-500 text-white text-sm font-bold">
+                    {format(date, 'd')}
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-foreground">
+                      {format(date, 'EEEE')}
+                    </h3>
+                    <p className="text-sm text-muted-foreground">
+                      {format(date, 'MMMM d, yyyy')} · {items.length} {items.length === 1 ? 'item' : 'items'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Items for this day */}
+                <div className="ml-12 space-y-4">
+                  {items.map(item => (
+                    <ContentCard key={item.id} item={item} />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -1,10 +1,16 @@
 import { clsx } from 'clsx'
 import { Calendar, Settings, RefreshCw } from 'lucide-react'
 import { useAppStore } from '../store'
+import { useSync } from '../hooks/useDigest'
 import { NavItem } from './NavItem'
 
 export function Header() {
   const { currentView, setView } = useAppStore()
+  const { sync, isSyncing } = useSync()
+
+  const handleSync = () => {
+    sync(undefined)
+  }
 
   return (
     <header className="border-b border-border bg-card">
@@ -16,8 +22,13 @@ export function Header() {
           <h1 className="text-xl font-semibold text-foreground">Companion</h1>
         </div>
         <div className="flex items-center gap-2">
-          <button className="p-2 rounded-lg hover:bg-muted transition-colors">
-            <RefreshCw className="h-5 w-5 text-muted-foreground" />
+          <button
+            onClick={handleSync}
+            disabled={isSyncing}
+            className="p-2 rounded-lg hover:bg-muted transition-colors disabled:opacity-50"
+            title={isSyncing ? 'Syncing...' : 'Sync now'}
+          >
+            <RefreshCw className={clsx('h-5 w-5 text-muted-foreground', isSyncing && 'animate-spin')} />
           </button>
           <button
             onClick={() => setView('settings')}
