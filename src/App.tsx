@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ThemeProvider } from './lib/ThemeProvider'
 import { useAppStore } from './store'
-import { Layout } from './components'
+import { Layout, OfflineIndicator } from './components'
 import { DailyDigestView, WeeklySummaryView, SettingsView } from './views'
 
 const queryClient = new QueryClient({
@@ -35,6 +35,7 @@ function App() {
         <Layout>
           <MainContent />
         </Layout>
+        <OfflineIndicator />
       </ThemeProvider>
     </QueryClientProvider>
   )

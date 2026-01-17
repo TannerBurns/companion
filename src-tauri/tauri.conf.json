@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "companion",
+  "productName": "Companion",
   "version": "0.1.0",
   "identifier": "com.companion.app",
   "build": {
@@ -14,6 +14,7 @@
     "windows": [
       {
         "title": "Companion",
+        "label": "main",
         "width": 1200,
         "height": 800,
         "resizable": true,
@@ -35,7 +36,14 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "macOS": {
+      "minimumSystemVersion": "10.15",
+      "exceptionDomain": "",
+      "signingIdentity": null,
+      "providerShortName": null,
+      "entitlements": null
+    }
   },
   "plugins": {
     "shell": {

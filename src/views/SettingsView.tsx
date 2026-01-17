@@ -200,12 +200,9 @@ function ApiKeysSettings() {
 
 function NotificationsSettings() {
   const { preferences, save, isSaving } = usePreferences()
-  const notificationsEnabled = preferences?.notificationsEnabled ?? false
 
   const handleToggle = () => {
-    if (preferences) {
-      save({ ...preferences, notificationsEnabled: !notificationsEnabled })
-    }
+    save({ ...preferences, notificationsEnabled: !preferences.notificationsEnabled })
   }
 
   return (
@@ -235,13 +232,13 @@ function NotificationsSettings() {
             disabled={isSaving}
             className={clsx(
               'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
-              notificationsEnabled ? 'bg-primary-500' : 'bg-gray-300 dark:bg-gray-600'
+              preferences.notificationsEnabled ? 'bg-primary-500' : 'bg-gray-300 dark:bg-gray-600'
             )}
           >
             <span
               className={clsx(
                 'inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
-                notificationsEnabled ? 'translate-x-6' : 'translate-x-1'
+                preferences.notificationsEnabled ? 'translate-x-6' : 'translate-x-1'
               )}
             />
           </button>
@@ -253,12 +250,9 @@ function NotificationsSettings() {
 
 function SyncSettings() {
   const { preferences, save, isSaving } = usePreferences()
-  const syncInterval = preferences?.syncIntervalMinutes ?? 15
 
   const handleIntervalChange = (value: number) => {
-    if (preferences) {
-      save({ ...preferences, syncIntervalMinutes: value })
-    }
+    save({ ...preferences, syncIntervalMinutes: value })
   }
 
   return (
@@ -282,7 +276,7 @@ function SyncSettings() {
             </div>
           </div>
           <select
-            value={syncInterval}
+            value={preferences.syncIntervalMinutes}
             onChange={e => handleIntervalChange(Number(e.target.value))}
             disabled={isSaving}
             className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary-500"
@@ -301,14 +295,12 @@ function SyncSettings() {
               <label key={source} className="flex items-center gap-2">
                 <input
                   type="checkbox"
-                  checked={preferences?.enabledSources?.includes(source) ?? false}
+                  checked={preferences.enabledSources.includes(source)}
                   onChange={e => {
-                    if (preferences) {
-                      const sources = e.target.checked
-                        ? [...(preferences.enabledSources || []), source]
-                        : preferences.enabledSources?.filter(s => s !== source) || []
-                      save({ ...preferences, enabledSources: sources })
-                    }
+                    const sources = e.target.checked
+                      ? [...preferences.enabledSources, source]
+                      : preferences.enabledSources.filter(s => s !== source)
+                    save({ ...preferences, enabledSources: sources })
                   }}
                   className="h-4 w-4 rounded border-border text-primary-500 focus:ring-primary-500"
                 />

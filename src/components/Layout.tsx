@@ -3,6 +3,7 @@ import { Calendar, Settings, RefreshCw } from 'lucide-react'
 import { useAppStore } from '../store'
 import { useSync } from '../hooks/useDigest'
 import { NavItem } from './NavItem'
+import { PipelineStatus } from './PipelineStatus'
 
 export function Header() {
   const { currentView, setView } = useAppStore()
@@ -22,6 +23,7 @@ export function Header() {
           <h1 className="text-xl font-semibold text-foreground">Companion</h1>
         </div>
         <div className="flex items-center gap-2">
+          <PipelineStatus />
           <button
             onClick={handleSync}
             disabled={isSyncing}

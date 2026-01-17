@@ -10,3 +10,7 @@ export { CategoryBadge } from './CategoryBadge'
 export { SourceIcon } from './SourceIcon'
 export { ImportanceIndicator } from './ImportanceIndicator'
 export { ContentCard } from './ContentCard'
+
+// Status components
+export { OfflineIndicator } from './OfflineIndicator'
+export { PipelineStatus } from './PipelineStatus'
