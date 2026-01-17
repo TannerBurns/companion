@@ -65,21 +65,11 @@ pub enum TaskStatus {
     Failed,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PipelineState {
     pub active_tasks: Vec<PipelineTask>,
     pub recent_history: Vec<PipelineTask>,
     pub is_busy: bool,
-}
-
-impl Default for PipelineState {
-    fn default() -> Self {
-        Self {
-            active_tasks: Vec::new(),
-            recent_history: Vec::new(),
-            is_busy: false,
-        }
-    }
 }
 
 pub struct PipelineManager {

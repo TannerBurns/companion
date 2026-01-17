@@ -33,6 +33,7 @@ fn main() {
                     .expect("Failed to initialize database");
                 let crypto = CryptoService::new().expect("Failed to initialize crypto service");
 
+                // Use a single shared database instance to avoid SQLite concurrency issues
                 let db_arc = Arc::new(db);
                 let notifications = NotificationService::new(app_handle.clone());
                 let analytics = AnalyticsService::new(db_arc.clone());
@@ -43,13 +44,8 @@ fn main() {
 
                 let sync_queue = SyncQueue::new();
 
-                // Separate db instance for state since db was moved into Arc
-                let db_for_state = Database::new(&app_handle)
-                    .await
-                    .expect("Failed to initialize database");
-
                 app.manage(Arc::new(Mutex::new(AppState {
-                    db: db_for_state,
+                    db: db_arc.clone(),
                     crypto,
                     notifications: Some(notifications),
                     analytics: Some(analytics),

@@ -18,7 +18,7 @@ use sync::SyncQueue;
 use std::sync::Arc;
 
 pub struct AppState {
-    pub db: Database,
+    pub db: Arc<Database>,
     pub crypto: CryptoService,
     pub notifications: Option<NotificationService>,
     pub analytics: Option<AnalyticsService>,
