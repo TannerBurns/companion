@@ -50,6 +50,9 @@ pub struct ContentGroup {
     pub importance_score: f64,
     pub message_ids: Vec<String>,
     pub people: Vec<String>,
+    /// Stable ID for topic continuity (hash of topic + date)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub topic_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,6 +61,19 @@ pub struct UngroupedItem {
     pub summary: String,
     pub category: String,
     pub importance_score: f64,
+}
+
+/// Represents an existing topic from a previous sync cycle
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExistingTopic {
+    pub topic_id: String,
+    pub topic: String,
+    pub channels: Vec<String>,
+    pub summary: String,
+    pub category: String,
+    pub importance_score: f64,
+    pub message_count: i32,
+    pub people: Vec<String>,
 }
 
 pub fn slack_message_prompt(channel: &str, messages: &str) -> String {
@@ -170,17 +186,47 @@ Return JSON with this structure:
 }
 
 pub fn batch_analysis_prompt(date: &str, messages_json: &str) -> String {
-    format!(r##"You are analyzing all messages from {date} across multiple Slack channels and direct messages.
+    batch_analysis_prompt_with_existing(date, messages_json, None)
+}
 
+pub fn batch_analysis_prompt_with_existing(date: &str, messages_json: &str, existing_topics: Option<&str>) -> String {
+    let existing_context = if let Some(topics_json) = existing_topics {
+        format!(r##"
+EXISTING TOPICS FROM EARLIER TODAY:
+The following topics were already identified from earlier sync cycles today. When you encounter new messages that relate to these existing topics, you should MERGE them into the existing topic rather than creating a new one.
+
+{topics_json}
+
+IMPORTANT MERGING RULES:
+- If new messages relate to an existing topic, include the existing topic_id in your response and UPDATE the summary/highlights to incorporate the new information
+- Combine the message_ids (new ones will be added to the existing list)
+- Update channels and people lists to include any new participants
+- Update the summary to reflect ALL information (existing + new)
+- Only create a NEW topic if the discussion is genuinely different from all existing topics
+- When updating an existing topic, use the SAME topic_id from the existing topic
+
+"##)
+    } else {
+        String::new()
+    };
+
+    let topic_id_instruction = if existing_topics.is_some() {
+        r#""topic_id": "existing topic_id if updating, or null if new topic","#
+    } else {
+        r#""topic_id": null,"#
+    };
+
+    format!(r##"You are analyzing all messages from {date} across multiple Slack channels and direct messages.
+{existing_context}
 Your task is to:
 1. Identify related discussions that span multiple channels (e.g., a product launch discussed in #product, #marketing, and #sales)
 2. Group related messages together by topic/theme
 3. Summarize each group
 4. Categorize each group (sales, marketing, product, engineering, research, or other)
 5. Identify standalone messages that don't fit into any group
-6. Create an executive summary of the entire day
+6. Create an executive summary of the entire day (incorporating all topics, both existing and new)
 
-Here are all the messages (each includes: id, channel, author, timestamp, and text):
+Here are the NEW messages to process (each includes: id, channel, author, timestamp, and text):
 
 {messages_json}
 
@@ -188,6 +234,7 @@ Return JSON with this exact structure:
 {{
   "groups": [
     {{
+      {topic_id_instruction}
       "topic": "Clear, descriptive topic name (e.g., 'Q1 Product Launch Planning')",
       "channels": ["#channel1", "#channel2", "DM: Person1 & Person2"],
       "summary": "2-4 sentence summary of this discussion across all channels",
@@ -359,6 +406,7 @@ mod tests {
                 importance_score: 0.85,
                 message_ids: vec!["msg1".into(), "msg2".into()],
                 people: vec!["Alice".into()],
+                topic_id: None,
             }],
             ungrouped: vec![UngroupedItem {
                 message_id: "msg3".into(),
@@ -394,11 +442,199 @@ mod tests {
             importance_score: 0.7,
             message_ids: vec!["id1".into()],
             people: vec!["Bob".into()],
+            topic_id: None,
         };
 
         let json = serde_json::to_string(&group).unwrap();
         assert!(json.contains("Test Topic"));
         assert!(json.contains("engineering"));
         assert!(json.contains("Bob"));
+        assert!(!json.contains("topic_id"));
+    }
+
+    #[test]
+    fn test_content_group_with_topic_id() {
+        let group = ContentGroup {
+            topic: "Q1 Launch".into(),
+            channels: vec!["product".into()],
+            summary: "Launch discussion".into(),
+            highlights: vec!["Launch date set".into()],
+            category: "product".into(),
+            importance_score: 0.9,
+            message_ids: vec!["msg1".into()],
+            people: vec!["Alice".into()],
+            topic_id: Some("topic_abc123".into()),
+        };
+
+        let json = serde_json::to_string(&group).unwrap();
+        assert!(json.contains("topic_id"));
+        assert!(json.contains("topic_abc123"));
+
+        let parsed: ContentGroup = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.topic_id, Some("topic_abc123".into()));
+    }
+
+    #[test]
+    fn test_existing_topic_serialization() {
+        let existing = ExistingTopic {
+            topic_id: "topic_xyz789".into(),
+            topic: "Sprint Planning".into(),
+            channels: vec!["engineering".into(), "product".into()],
+            summary: "Discussed sprint goals".into(),
+            category: "engineering".into(),
+            importance_score: 0.8,
+            message_count: 15,
+            people: vec!["Bob".into(), "Carol".into()],
+        };
+
+        let json = serde_json::to_string(&existing).unwrap();
+        assert!(json.contains("topic_xyz789"));
+        assert!(json.contains("Sprint Planning"));
+        assert!(json.contains("message_count"));
+        assert!(json.contains("15"));
+
+        let parsed: ExistingTopic = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.topic_id, "topic_xyz789");
+        assert_eq!(parsed.message_count, 15);
+    }
+
+    #[test]
+    fn test_batch_analysis_prompt_with_existing_topics() {
+        let messages = r##"[{"id": "1", "channel": "#general", "text": "More about the launch"}]"##;
+        let existing_topics = r##"[{"topic_id": "topic_123", "topic": "Q1 Launch", "channels": ["#product"], "summary": "Launch planning", "category": "product", "importance_score": 0.9, "message_count": 5, "people": ["Alice"]}]"##;
+        
+        let prompt = batch_analysis_prompt_with_existing("2024-01-15", messages, Some(existing_topics));
+        
+        assert!(prompt.contains("EXISTING TOPICS FROM EARLIER TODAY"));
+        assert!(prompt.contains("topic_123"));
+        assert!(prompt.contains("Q1 Launch"));
+        assert!(prompt.contains("MERGING RULES"));
+        assert!(prompt.contains("2024-01-15"));
+        assert!(prompt.contains("#general"));
+        assert!(prompt.contains("groups"));
+    }
+
+    #[test]
+    fn test_batch_analysis_prompt_without_existing_topics() {
+        let messages = r##"[{"id": "1", "channel": "#general", "text": "Hello"}]"##;
+        
+        let prompt = batch_analysis_prompt_with_existing("2024-01-15", messages, None);
+        
+        assert!(!prompt.contains("EXISTING TOPICS FROM EARLIER TODAY"));
+        assert!(!prompt.contains("MERGING RULES"));
+        assert!(prompt.contains("2024-01-15"));
+        assert!(prompt.contains("#general"));
+    }
+
+    #[test]
+    fn test_batch_analysis_prompt_backwards_compatible() {
+        let messages = r##"[{"id": "1", "channel": "#test", "text": "Test message"}]"##;
+        
+        let prompt1 = batch_analysis_prompt("2024-01-15", messages);
+        let prompt2 = batch_analysis_prompt_with_existing("2024-01-15", messages, None);
+        
+        assert!(!prompt1.contains("EXISTING TOPICS"));
+        assert!(!prompt2.contains("EXISTING TOPICS"));
+        assert!(prompt1.contains("groups"));
+        assert!(prompt2.contains("groups"));
+    }
+
+    #[test]
+    fn test_content_group_deserialize_without_topic_id() {
+        let json = r##"{
+            "topic": "Test Topic",
+            "channels": ["#general"],
+            "summary": "A summary",
+            "highlights": ["point 1"],
+            "category": "engineering",
+            "importance_score": 0.8,
+            "message_ids": ["msg1"],
+            "people": ["Alice"]
+        }"##;
+        
+        let parsed: ContentGroup = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.topic, "Test Topic");
+        assert_eq!(parsed.topic_id, None);
+    }
+
+    #[test]
+    fn test_content_group_deserialize_with_null_topic_id() {
+        let json = r##"{
+            "topic": "Test Topic",
+            "channels": ["#general"],
+            "summary": "A summary",
+            "highlights": ["point 1"],
+            "category": "engineering",
+            "importance_score": 0.8,
+            "message_ids": ["msg1"],
+            "people": ["Alice"],
+            "topic_id": null
+        }"##;
+        
+        let parsed: ContentGroup = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.topic_id, None);
+    }
+
+    #[test]
+    fn test_batch_analysis_prompt_includes_topic_id_instruction() {
+        let messages = r##"[{"id": "1", "channel": "#test", "text": "Test"}]"##;
+        
+        let prompt_without = batch_analysis_prompt_with_existing("2024-01-15", messages, None);
+        assert!(prompt_without.contains(r#""topic_id": null"#));
+        
+        let existing = r##"[{"topic_id": "t1", "topic": "Test"}]"##;
+        let prompt_with = batch_analysis_prompt_with_existing("2024-01-15", messages, Some(existing));
+        assert!(prompt_with.contains("existing topic_id if updating"));
+    }
+
+    #[test]
+    fn test_batch_analysis_prompt_with_empty_existing_topics() {
+        let messages = r##"[{"id": "1", "channel": "#test", "text": "Test"}]"##;
+        let existing = "[]";
+        
+        let prompt = batch_analysis_prompt_with_existing("2024-01-15", messages, Some(existing));
+        assert!(prompt.contains("EXISTING TOPICS FROM EARLIER TODAY"));
+        assert!(prompt.contains("[]"));
+    }
+
+    #[test]
+    fn test_existing_topic_all_fields_required() {
+        let json = r#"{
+            "topic_id": "t1",
+            "topic": "Topic",
+            "channels": [],
+            "summary": "Sum",
+            "category": "other",
+            "importance_score": 0.5,
+            "message_count": 0,
+            "people": []
+        }"#;
+        
+        let parsed: ExistingTopic = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.topic_id, "t1");
+        assert_eq!(parsed.message_count, 0);
+        assert!(parsed.channels.is_empty());
+        assert!(parsed.people.is_empty());
+    }
+
+    #[test]
+    fn test_content_group_topic_id_roundtrip() {
+        let group = ContentGroup {
+            topic: "Roundtrip Test".into(),
+            channels: vec!["test".into()],
+            summary: "Summary".into(),
+            highlights: vec![],
+            category: "other".into(),
+            importance_score: 0.5,
+            message_ids: vec![],
+            people: vec![],
+            topic_id: Some("topic_roundtrip_123".into()),
+        };
+
+        let json = serde_json::to_string(&group).unwrap();
+        let parsed: ContentGroup = serde_json::from_str(&json).unwrap();
+        
+        assert_eq!(parsed.topic_id, Some("topic_roundtrip_123".into()));
+        assert_eq!(parsed.topic, "Roundtrip Test");
     }
 }
