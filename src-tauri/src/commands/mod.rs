@@ -7,6 +7,7 @@ use tauri::State;
 use tokio::sync::Mutex;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DigestItem {
     pub id: String,
     pub title: String,
@@ -26,6 +27,7 @@ pub struct DigestResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CategorySummary {
     pub name: String,
     pub count: i32,
@@ -33,6 +35,7 @@ pub struct CategorySummary {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SyncStatus {
     pub is_syncing: bool,
     pub last_sync_at: Option<i64>,
@@ -40,6 +43,7 @@ pub struct SyncStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SourceStatus {
     pub name: String,
     pub status: String,
@@ -48,6 +52,7 @@ pub struct SourceStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Preferences {
     pub sync_interval_minutes: i32,
     pub enabled_sources: Vec<String>,
@@ -134,20 +139,37 @@ pub async fn save_api_key(
 
 #[tauri::command]
 pub async fn get_preferences(
-    _state: State<'_, Arc<Mutex<AppState>>>,
+    state: State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<Preferences, String> {
-    Ok(Preferences {
-        sync_interval_minutes: 15,
-        enabled_sources: vec!["slack".to_string(), "jira".to_string(), "confluence".to_string()],
-        enabled_categories: vec![
-            "sales".to_string(),
-            "marketing".to_string(),
-            "product".to_string(),
-            "engineering".to_string(),
-            "research".to_string(),
-        ],
-        notifications_enabled: true,
-    })
+    let state = state.lock().await;
+    
+    let result: Option<(String,)> = sqlx::query_as(
+        "SELECT value FROM preferences WHERE key = 'user_preferences'"
+    )
+    .fetch_optional(state.db.pool())
+    .await
+    .map_err(|e| e.to_string())?;
+    
+    match result {
+        Some((json,)) => {
+            serde_json::from_str(&json).map_err(|e| e.to_string())
+        }
+        None => {
+            // Return defaults if no preferences saved yet
+            Ok(Preferences {
+                sync_interval_minutes: 15,
+                enabled_sources: vec![],
+                enabled_categories: vec![
+                    "sales".to_string(),
+                    "marketing".to_string(),
+                    "product".to_string(),
+                    "engineering".to_string(),
+                    "research".to_string(),
+                ],
+                notifications_enabled: true,
+            })
+        }
+    }
 }
 
 #[tauri::command]

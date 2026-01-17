@@ -8,10 +8,10 @@ use tauri::{
 };
 use tokio::sync::Mutex;
 
-const TRAY_ICON_IDLE: &[u8] = include_bytes!("../../icons/32x32.png");
+const TRAY_ICON: &[u8] = include_bytes!("../../icons/tray-icon.png");
 
 pub fn init_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    let icon = Image::from_bytes(TRAY_ICON_IDLE)?;
+    let icon = Image::from_bytes(TRAY_ICON)?;
 
     let show_window = MenuItem::with_id(app, "show", "Show Companion", true, None::<&str>)?;
     let sync_now = MenuItem::with_id(app, "sync", "Sync Now", true, None::<&str>)?;
@@ -21,6 +21,7 @@ pub fn init_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 
     let _tray = TrayIconBuilder::with_id("main")
         .icon(icon)
+        .icon_as_template(true)
         .tooltip("Companion - Idle")
         .menu(&menu)
         .show_menu_on_left_click(false)
