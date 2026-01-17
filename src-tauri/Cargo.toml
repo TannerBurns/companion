@@ -31,6 +31,11 @@ serde_json = "1"
 aes-gcm = "0.10"
 rand = "0.8"
 base64 = "0.22"
+sha2 = "0.10"
+
+# OAuth / Browser
+open = "5"
+urlencoding = "2"
 
 # OS Keychain
 keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }

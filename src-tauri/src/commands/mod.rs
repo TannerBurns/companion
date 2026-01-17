@@ -1,4 +1,5 @@
 use crate::AppState;
+use crate::sync::{SlackClient, SlackTokens, AtlassianClient, AtlassianTokens, CloudResource};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::State;
@@ -162,5 +163,94 @@ pub async fn save_preferences(
         .await
         .map_err(|e| e.to_string())?;
     
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn connect_slack(
+    state: State<'_, Arc<Mutex<AppState>>>,
+    client_id: String,
+    client_secret: String,
+) -> Result<SlackTokens, String> {
+    let client = SlackClient::new(client_id, client_secret);
+    let tokens = client.start_oauth_flow().await.map_err(|e| e.to_string())?;
+    
+    // Store tokens
+    let state = state.lock().await;
+    let encrypted = state.crypto
+        .encrypt_string(&serde_json::to_string(&tokens).unwrap())
+        .map_err(|e| e.to_string())?;
+    
+    let now = chrono::Utc::now().timestamp();
+    sqlx::query(
+        "INSERT INTO credentials (id, service, encrypted_data, created_at, updated_at)
+         VALUES ('slack', 'slack', ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET encrypted_data = ?, updated_at = ?"
+    )
+    .bind(&encrypted)
+    .bind(now)
+    .bind(now)
+    .bind(&encrypted)
+    .bind(now)
+    .execute(state.db.pool())
+    .await
+    .map_err(|e| e.to_string())?;
+    
+    tracing::info!("Slack connected for team: {}", tokens.team_name);
+    Ok(tokens)
+}
+
+#[tauri::command]
+pub async fn connect_atlassian(
+    state: State<'_, Arc<Mutex<AppState>>>,
+    client_id: String,
+    client_secret: String,
+) -> Result<(AtlassianTokens, Vec<CloudResource>), String> {
+    let client = AtlassianClient::new(client_id, client_secret);
+    let (tokens, resources) = client.start_oauth_flow().await.map_err(|e| e.to_string())?;
+    
+    // Store tokens
+    let state = state.lock().await;
+    let encrypted = state.crypto
+        .encrypt_string(&serde_json::to_string(&tokens).unwrap())
+        .map_err(|e| e.to_string())?;
+    
+    let now = chrono::Utc::now().timestamp();
+    sqlx::query(
+        "INSERT INTO credentials (id, service, encrypted_data, created_at, updated_at)
+         VALUES ('atlassian', 'atlassian', ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET encrypted_data = ?, updated_at = ?"
+    )
+    .bind(&encrypted)
+    .bind(now)
+    .bind(now)
+    .bind(&encrypted)
+    .bind(now)
+    .execute(state.db.pool())
+    .await
+    .map_err(|e| e.to_string())?;
+    
+    tracing::info!("Atlassian connected with {} cloud resources", resources.len());
+    Ok((tokens, resources))
+}
+
+#[tauri::command]
+pub async fn select_atlassian_resource(
+    state: State<'_, Arc<Mutex<AppState>>>,
+    cloud_id: String,
+) -> Result<(), String> {
+    let state = state.lock().await;
+    
+    sqlx::query(
+        "INSERT INTO preferences (key, value) VALUES ('atlassian_cloud_id', ?)
+         ON CONFLICT(key) DO UPDATE SET value = ?"
+    )
+    .bind(&cloud_id)
+    .bind(&cloud_id)
+    .execute(state.db.pool())
+    .await
+    .map_err(|e| e.to_string())?;
+    
+    tracing::info!("Selected Atlassian cloud resource: {}", cloud_id);
     Ok(())
 }
