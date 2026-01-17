@@ -107,7 +107,7 @@ impl ProcessingPipeline {
             .await
             .map_err(|e| e.to_string())?;
 
-        let now = chrono::Utc::now().timestamp();
+        let now = chrono::Utc::now().timestamp_millis();
         let summary_id = uuid::Uuid::new_v4().to_string();
         
         sqlx::query(
@@ -167,7 +167,7 @@ impl ProcessingPipeline {
             .await
             .map_err(|e| e.to_string())?;
 
-        let now = chrono::Utc::now().timestamp();
+        let now = chrono::Utc::now().timestamp_millis();
         let digest_id = uuid::Uuid::new_v4().to_string();
         
         sqlx::query(

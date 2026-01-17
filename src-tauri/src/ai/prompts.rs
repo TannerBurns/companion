@@ -74,8 +74,13 @@ Return JSON with this structure:
 }
 
 pub fn confluence_page_prompt(title: &str, space: &str, content: &str) -> String {
+    // Truncate at a safe UTF-8 boundary to avoid panics with multi-byte characters
     let truncated = if content.len() > 8000 {
-        &content[..8000]
+        let mut end = 8000;
+        while end > 0 && !content.is_char_boundary(end) {
+            end -= 1;
+        }
+        &content[..end]
     } else {
         content
     };
@@ -218,6 +223,21 @@ mod tests {
         // Should contain truncated content (8000 chars), not full 10000
         assert!(prompt.len() < 10000);
         assert!(prompt.contains(&"x".repeat(100))); // Still has some content
+    }
+
+    #[test]
+    fn test_confluence_page_prompt_handles_multibyte_utf8() {
+        // Create content with multi-byte UTF-8 characters (emoji is 4 bytes each)
+        // Position truncation to land in the middle of a multi-byte char
+        let prefix = "x".repeat(7998);
+        let emoji_content = format!("{}🎉🎉🎉", prefix); // 7998 + 12 bytes = 8010 bytes
+        
+        // This should not panic and should truncate at a valid UTF-8 boundary
+        let prompt = confluence_page_prompt("Title", "Space", &emoji_content);
+        
+        // Verify it's valid UTF-8 (would have panicked if sliced incorrectly)
+        assert!(prompt.is_char_boundary(0));
+        assert!(prompt.contains(&"x".repeat(100)));
     }
 
     #[test]
