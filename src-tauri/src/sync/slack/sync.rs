@@ -191,7 +191,7 @@ impl SlackSyncService {
         .bind(&channel.name)
         .bind(&msg.thread_ts)
         .bind(created_at)
-        .bind(created_at)
+        .bind(now)
         .bind(now)
         .bind(&encrypted_body)
         .bind(now)
