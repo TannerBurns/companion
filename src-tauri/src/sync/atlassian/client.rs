@@ -78,8 +78,10 @@ impl AtlassianClient {
         let (code_verifier, code_challenge) = Self::generate_pkce();
         let auth_url = self.get_auth_url(&state, &code_challenge);
         
+        let rx = spawn_oauth_callback_listener(REDIRECT_PORT, state).await
+            .map_err(|e| AtlassianError::OAuth(format!("Failed to start callback listener: {}", e)))?;
+        
         open::that(&auth_url).map_err(|e| AtlassianError::OAuth(e.to_string()))?;
-        let rx = spawn_oauth_callback_listener(REDIRECT_PORT, state);
         
         let code = rx.await
             .map_err(|_| AtlassianError::OAuth("Callback cancelled".into()))?

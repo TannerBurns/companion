@@ -61,8 +61,10 @@ impl SlackClient {
         let state = uuid::Uuid::new_v4().to_string();
         let auth_url = self.get_auth_url(&state);
         
+        let rx = spawn_oauth_callback_listener(REDIRECT_PORT, state).await
+            .map_err(|e| SlackError::OAuth(format!("Failed to start callback listener: {}", e)))?;
+        
         open::that(&auth_url).map_err(|e| SlackError::OAuth(e.to_string()))?;
-        let rx = spawn_oauth_callback_listener(REDIRECT_PORT, state);
         
         let code = rx.await
             .map_err(|_| SlackError::OAuth("Callback cancelled".into()))?
