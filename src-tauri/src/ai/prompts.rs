@@ -210,8 +210,10 @@ IMPORTANT MERGING RULES:
         String::new()
     };
 
+    // When existing topics are provided, we show a realistic example with a comment.
+    // We use a separate line for the instruction to keep the JSON valid-looking.
     let topic_id_instruction = if existing_topics.is_some() {
-        r#""topic_id": "existing topic_id if updating, or null if new topic","#
+        r#""topic_id": "topic_abc123","#
     } else {
         r#""topic_id": null,"#
     };
@@ -264,7 +266,8 @@ Guidelines:
 - Low-content messages (just emojis, "ok", "thanks") should go in ungrouped with low importance
 - importance_score: 0.9-1.0 for critical business decisions, 0.6-0.8 for important updates, 0.3-0.5 for routine, 0.0-0.2 for noise
 - Identify action items that emerge from discussions
-- The daily_summary should give an executive the key takeaways in 30 seconds"##)
+- The daily_summary should give an executive the key takeaways in 30 seconds
+- topic_id: When updating an existing topic, copy the exact topic_id string from the existing topics list. For new topics, set topic_id to null"##)
 }
 
 #[cfg(test)]
@@ -584,7 +587,10 @@ mod tests {
         
         let existing = r##"[{"topic_id": "t1", "topic": "Test"}]"##;
         let prompt_with = batch_analysis_prompt_with_existing("2024-01-15", messages, Some(existing));
-        assert!(prompt_with.contains("existing topic_id if updating"));
+        // When existing topics are provided, we show a realistic example ID
+        assert!(prompt_with.contains(r#""topic_id": "topic_abc123""#));
+        // And include a guideline explaining how to use topic_id
+        assert!(prompt_with.contains("topic_id: When updating an existing topic"));
     }
 
     #[test]

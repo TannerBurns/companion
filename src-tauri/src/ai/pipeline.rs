@@ -215,12 +215,13 @@ impl ProcessingPipeline {
                 tracing::info!("Updating existing topic: {}", group.topic);
                 sqlx::query(
                     "UPDATE ai_summaries 
-                     SET summary = ?, highlights = ?, category = ?, importance_score = ?, entities = ?, generated_at = ?
+                     SET summary = ?, highlights = ?, category = ?, category_confidence = ?, importance_score = ?, entities = ?, generated_at = ?
                      WHERE id = ?"
                 )
                 .bind(&group.summary)
                 .bind(serde_json::to_string(&group.highlights).unwrap_or_default())
                 .bind(&group.category)
+                .bind(0.9)
                 .bind(group.importance_score)
                 .bind(&entities_json)
                 .bind(now)
