@@ -217,3 +217,72 @@ pub struct SyncMetrics {
     pub total_items_synced: i32,
     pub days: i32,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_analytics_event_new() {
+        let event = AnalyticsEvent::new("view", serde_json::json!({"page": "home"}));
+        assert_eq!(event.event_type, "view");
+        assert_eq!(event.event_data["page"], "home");
+    }
+
+    #[test]
+    fn test_analytics_event_new_with_string() {
+        let event = AnalyticsEvent::new(String::from("sync"), serde_json::json!({}));
+        assert_eq!(event.event_type, "sync");
+    }
+
+    #[test]
+    fn test_analytics_event_serialization() {
+        let event = AnalyticsEvent::new("click", serde_json::json!({"target": "button"}));
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains("\"event_type\":\"click\""));
+        assert!(json.contains("\"target\":\"button\""));
+    }
+
+    #[test]
+    fn test_analytics_event_deserialization() {
+        let json = r#"{"event_type":"sync","event_data":{"source":"slack"}}"#;
+        let event: AnalyticsEvent = serde_json::from_str(json).unwrap();
+        assert_eq!(event.event_type, "sync");
+        assert_eq!(event.event_data["source"], "slack");
+    }
+
+    #[test]
+    fn test_usage_summary_serialization() {
+        let summary = UsageSummary {
+            total_syncs: 10,
+            total_ai_requests: 5,
+            total_views: 100,
+            total_source_clicks: 25,
+            days: 7,
+        };
+        let json = serde_json::to_string(&summary).unwrap();
+        assert!(json.contains("\"total_syncs\":10"));
+        assert!(json.contains("\"days\":7"));
+    }
+
+    #[test]
+    fn test_sync_metrics_serialization() {
+        let metrics = SyncMetrics {
+            avg_duration_ms: 1500,
+            total_items_synced: 42,
+            days: 30,
+        };
+        let json = serde_json::to_string(&metrics).unwrap();
+        assert!(json.contains("\"avg_duration_ms\":1500"));
+        assert!(json.contains("\"total_items_synced\":42"));
+    }
+
+    #[test]
+    fn test_sync_metrics_deserialization() {
+        let json = r#"{"avg_duration_ms":2000,"total_items_synced":100,"days":14}"#;
+        let metrics: SyncMetrics = serde_json::from_str(json).unwrap();
+        assert_eq!(metrics.avg_duration_ms, 2000);
+        assert_eq!(metrics.total_items_synced, 100);
+        assert_eq!(metrics.days, 14);
+    }
+}

@@ -235,4 +235,141 @@ mod tests {
         assert!(!state.is_busy);
         assert_eq!(state.recent_history.len(), 1);
     }
+
+    #[tokio::test]
+    async fn test_fail_task_stores_error() {
+        let manager = PipelineManager::new();
+        let task_id = manager
+            .start_task(PipelineTaskType::SyncJira, "Syncing issues".to_string())
+            .await;
+
+        manager.fail_task(&task_id, "Connection failed".to_string()).await;
+
+        let state = manager.get_state().await;
+        assert_eq!(state.active_tasks.len(), 0);
+        assert_eq!(state.recent_history.len(), 1);
+        assert_eq!(state.recent_history[0].status, TaskStatus::Failed);
+        assert_eq!(
+            state.recent_history[0].error,
+            Some("Connection failed".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_status_message_idle() {
+        let manager = PipelineManager::new();
+        let msg = manager.get_status_message().await;
+        assert_eq!(msg, "Companion - Idle");
+    }
+
+    #[tokio::test]
+    async fn test_status_message_single_task() {
+        let manager = PipelineManager::new();
+        manager
+            .start_task(PipelineTaskType::AiSummarize, "Processing items".to_string())
+            .await;
+
+        let msg = manager.get_status_message().await;
+        assert_eq!(msg, "Companion - Processing items");
+    }
+
+    #[tokio::test]
+    async fn test_status_message_multiple_tasks() {
+        let manager = PipelineManager::new();
+        manager
+            .start_task(PipelineTaskType::SyncSlack, "Task 1".to_string())
+            .await;
+        manager
+            .start_task(PipelineTaskType::SyncJira, "Task 2".to_string())
+            .await;
+
+        let msg = manager.get_status_message().await;
+        assert_eq!(msg, "Companion - 2 tasks running");
+    }
+
+    #[test]
+    fn test_task_type_display_names() {
+        assert_eq!(PipelineTaskType::SyncSlack.display_name(), "Syncing Slack");
+        assert_eq!(PipelineTaskType::SyncJira.display_name(), "Syncing Jira");
+        assert_eq!(PipelineTaskType::SyncConfluence.display_name(), "Syncing Confluence");
+        assert_eq!(PipelineTaskType::AiSummarize.display_name(), "Summarizing content");
+        assert_eq!(PipelineTaskType::AiCategorize.display_name(), "Categorizing items");
+        assert_eq!(PipelineTaskType::GenerateDailyDigest.display_name(), "Generating daily digest");
+        assert_eq!(PipelineTaskType::GenerateWeeklyDigest.display_name(), "Generating weekly digest");
+    }
+
+    #[test]
+    fn test_task_type_icons() {
+        assert_eq!(PipelineTaskType::SyncSlack.icon(), "🔄");
+        assert_eq!(PipelineTaskType::AiSummarize.icon(), "✨");
+        assert_eq!(PipelineTaskType::AiCategorize.icon(), "🏷️");
+        assert_eq!(PipelineTaskType::GenerateDailyDigest.icon(), "📰");
+        assert_eq!(PipelineTaskType::GenerateWeeklyDigest.icon(), "📊");
+    }
+
+    #[tokio::test]
+    async fn test_progress_clamps_to_valid_range() {
+        let manager = PipelineManager::new();
+        let task_id = manager
+            .start_task(PipelineTaskType::SyncSlack, "Test".to_string())
+            .await;
+
+        manager.update_progress(&task_id, 1.5, None).await;
+        let state = manager.get_state().await;
+        assert_eq!(state.active_tasks[0].progress, Some(1.0));
+
+        manager.update_progress(&task_id, -0.5, None).await;
+        let state = manager.get_state().await;
+        assert_eq!(state.active_tasks[0].progress, Some(0.0));
+    }
+
+    #[tokio::test]
+    async fn test_update_nonexistent_task_is_noop() {
+        let manager = PipelineManager::new();
+        manager.update_progress("nonexistent", 0.5, None).await;
+        manager.complete_task("nonexistent", None).await;
+        let state = manager.get_state().await;
+        assert!(state.active_tasks.is_empty());
+        assert!(state.recent_history.is_empty());
+    }
+
+    #[test]
+    fn test_pipeline_state_default() {
+        let state = PipelineState::default();
+        assert!(state.active_tasks.is_empty());
+        assert!(state.recent_history.is_empty());
+        assert!(!state.is_busy);
+    }
+
+    #[test]
+    fn test_task_status_serialization() {
+        assert_eq!(
+            serde_json::to_string(&TaskStatus::Running).unwrap(),
+            "\"running\""
+        );
+        assert_eq!(
+            serde_json::to_string(&TaskStatus::Completed).unwrap(),
+            "\"completed\""
+        );
+        assert_eq!(
+            serde_json::to_string(&TaskStatus::Failed).unwrap(),
+            "\"failed\""
+        );
+        assert_eq!(
+            serde_json::to_string(&TaskStatus::Pending).unwrap(),
+            "\"pending\""
+        );
+    }
+
+    #[test]
+    fn test_task_type_serialization() {
+        assert_eq!(
+            serde_json::to_string(&PipelineTaskType::SyncSlack).unwrap(),
+            "\"sync_slack\""
+        );
+        assert_eq!(
+            serde_json::to_string(&PipelineTaskType::GenerateDailyDigest).unwrap(),
+            "\"generate_daily_digest\""
+        );
+    }
 }
