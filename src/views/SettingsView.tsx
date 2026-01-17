@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { clsx } from 'clsx'
 import {
   ChevronLeft,
@@ -15,14 +15,16 @@ import {
   Moon,
   Monitor,
   Check,
+  Settings,
 } from 'lucide-react'
 import { useAppStore } from '../store'
 import type { SettingsSection } from '../store'
-import { SourceCard } from '../components'
+import { SourceCard, SlackChannelSelector } from '../components'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
 import { useTheme } from '../lib/useTheme'
 import { usePreferences, useApiKey } from '../hooks/usePreferences'
+import { api } from '../lib/api'
 
 interface SettingsNavItemProps {
   icon: React.ComponentType<{ className?: string }>
@@ -49,13 +51,85 @@ function SettingsNavItem({ icon: Icon, label, active, onClick }: SettingsNavItem
 }
 
 function SourcesSettings() {
+  const { slack, setSlackState, showChannelSelector, setShowChannelSelector } = useAppStore()
+  const [isConnecting, setIsConnecting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [showSlackSetup, setShowSlackSetup] = useState(false)
+  const [slackToken, setSlackToken] = useState('')
+
+  const loadSlackStatus = useCallback(async () => {
+    try {
+      const status = await api.getSlackConnectionStatus()
+      setSlackState({
+        connected: status.connected,
+        teamId: status.teamId ?? null,
+        teamName: status.teamName ?? null,
+        userId: status.userId ?? null,
+        selectedChannelCount: status.selectedChannelCount,
+      })
+    } catch (e) {
+      console.error('Failed to load Slack status:', e)
+    }
+  }, [setSlackState])
+
+  useEffect(() => {
+    loadSlackStatus()
+  }, [loadSlackStatus])
+
+  const handleConnectSlack = async () => {
+    if (!slackToken.trim()) {
+      setError('Please enter your Slack token')
+      return
+    }
+
+    setIsConnecting(true)
+    setError(null)
+    try {
+      const tokens = await api.connectSlack(slackToken.trim())
+      setSlackState({
+        connected: true,
+        teamId: tokens.teamId,
+        teamName: tokens.teamName,
+        userId: tokens.userId,
+        selectedChannelCount: 0,
+      })
+      setShowSlackSetup(false)
+      setSlackToken('')
+      // Show channel selector after successful connection
+      setShowChannelSelector(true)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to connect to Slack')
+    } finally {
+      setIsConnecting(false)
+    }
+  }
+
+  const handleDisconnectSlack = async () => {
+    try {
+      await api.disconnectSlack()
+      setSlackState({
+        connected: false,
+        teamId: null,
+        teamName: null,
+        userId: null,
+        selectedChannelCount: 0,
+      })
+      setError(null)
+    } catch (e) {
+      console.error('Failed to disconnect Slack:', e)
+    }
+  }
+
   const sources = [
     {
       id: 'slack',
       icon: Slack,
       name: 'Slack',
-      description: 'Sync messages and channels from your Slack workspace',
-      connected: false,
+      description: slack.connected && slack.teamName
+        ? `Connected to ${slack.teamName} • ${slack.selectedChannelCount} channels`
+        : 'Sync messages and channels from your Slack workspace',
+      connected: slack.connected,
+      isConnecting: isConnecting,
     },
     {
       id: 'jira',
@@ -63,6 +137,7 @@ function SourcesSettings() {
       name: 'Jira',
       description: 'Sync issues and projects from Atlassian Jira',
       connected: false,
+      isConnecting: false,
     },
     {
       id: 'confluence',
@@ -70,15 +145,20 @@ function SourcesSettings() {
       name: 'Confluence',
       description: 'Sync pages and spaces from Atlassian Confluence',
       connected: false,
+      isConnecting: false,
     },
   ]
 
   const handleConnect = (sourceId: string) => {
-    void sourceId // TODO: Implement OAuth connection flow
+    if (sourceId === 'slack') {
+      setShowSlackSetup(true)
+    }
   }
 
   const handleDisconnect = (sourceId: string) => {
-    void sourceId // TODO: Implement disconnect flow
+    if (sourceId === 'slack') {
+      handleDisconnectSlack()
+    }
   }
 
   return (
@@ -92,43 +172,154 @@ function SourcesSettings() {
 
       <div className="space-y-3">
         {sources.map((source) => (
-          <SourceCard
-            key={source.id}
-            icon={source.icon}
-            name={source.name}
-            description={source.description}
-            connected={source.connected}
-            onConnect={() => handleConnect(source.id)}
-            onDisconnect={() => handleDisconnect(source.id)}
-          />
+          <div key={source.id}>
+            <SourceCard
+              icon={source.icon}
+              name={source.name}
+              description={source.description}
+              connected={source.connected}
+              isConnecting={source.isConnecting}
+              onConnect={() => handleConnect(source.id)}
+              onDisconnect={() => handleDisconnect(source.id)}
+            />
+            {/* Slack-specific configure channels button */}
+            {source.id === 'slack' && slack.connected && (
+              <div className="ml-13 mt-2 flex items-center gap-2">
+                <button
+                  onClick={() => setShowChannelSelector(true)}
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-900/20 rounded-lg transition-colors"
+                >
+                  <Settings className="h-4 w-4" />
+                  Configure Channels
+                </button>
+              </div>
+            )}
+          </div>
         ))}
       </div>
+
+      {/* Error display */}
+      {error && (
+        <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-600 dark:text-red-400">
+          {error}
+        </div>
+      )}
 
       <div className="mt-6 p-4 bg-muted/50 rounded-lg">
         <div className="flex items-start gap-3">
           <Link2 className="h-5 w-5 text-muted-foreground mt-0.5" />
           <div>
             <h4 className="text-sm font-medium text-foreground">
-              API Key Configuration
+              How It Works
             </h4>
             <p className="text-sm text-muted-foreground mt-1">
-              You'll need to provide API credentials for each service. OAuth flows
-              will guide you through the connection process.
+              Create a Slack app for your workspace, install it, and paste the
+              User OAuth Token. Your token is stored securely on your device.
             </p>
           </div>
         </div>
       </div>
+
+      {/* Slack Token Setup Modal */}
+      {showSlackSetup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-background border border-border rounded-xl shadow-xl w-full max-w-lg p-6">
+            <h3 className="text-lg font-semibold text-foreground mb-2">
+              Connect Slack
+            </h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              To connect Slack, create a Slack app and paste your User OAuth Token.
+            </p>
+            
+            <div className="p-4 bg-muted/50 rounded-lg mb-4">
+              <h4 className="text-sm font-medium text-foreground mb-2">Setup Steps:</h4>
+              <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside">
+                <li>
+                  Go to{' '}
+                  <a
+                    href="https://api.slack.com/apps"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary-500 hover:underline"
+                  >
+                    api.slack.com/apps
+                  </a>
+                  {' '}→ Create New App → From scratch
+                </li>
+                <li>Name it anything (e.g., "Companion"), select your workspace</li>
+                <li>Go to <strong>OAuth & Permissions</strong>, add these <strong>User Token Scopes</strong>:
+                  <code className="block mt-1 p-2 bg-background rounded text-xs">
+                    channels:history, channels:read, groups:history, groups:read, im:history, im:read, mpim:history, mpim:read, users:read
+                  </code>
+                </li>
+                <li>Click <strong>Install to Workspace</strong> and authorize</li>
+                <li>Copy the <strong>User OAuth Token</strong> (starts with <code className="text-xs">xoxp-</code>)</li>
+              </ol>
+            </div>
+
+            {error && (
+              <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-600 dark:text-red-400">
+                {error}
+              </div>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1">
+                User OAuth Token
+              </label>
+              <Input
+                type="password"
+                value={slackToken}
+                onChange={(e) => setSlackToken(e.target.value)}
+                placeholder="xoxp-..."
+              />
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowSlackSetup(false)
+                  setSlackToken('')
+                  setError(null)
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleConnectSlack}
+                disabled={isConnecting || !slackToken.trim()}
+              >
+                {isConnecting ? (
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Slack className="h-4 w-4" />
+                )}
+                Connect
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Channel Selector Modal */}
+      <SlackChannelSelector
+        isOpen={showChannelSelector}
+        onClose={() => setShowChannelSelector(false)}
+        teamId={slack.teamId ?? ''}
+        onSave={loadSlackStatus}
+      />
     </div>
   )
 }
 
 function ApiKeysSettings() {
   const [geminiKey, setGeminiKey] = useState('')
-  const { saveApiKey, isSaving, isSuccess } = useApiKey()
+  const { hasKey, isLoading, saveApiKey, isSaving, isSuccess } = useApiKey('gemini')
 
   const handleSaveGemini = () => {
     if (geminiKey.trim()) {
-      saveApiKey('gemini', geminiKey.trim())
+      saveApiKey(geminiKey.trim())
       setGeminiKey('')
     }
   }
@@ -144,9 +335,26 @@ function ApiKeysSettings() {
 
       <div className="space-y-6">
         <div className="p-4 bg-card border border-border rounded-lg">
-          <div className="flex items-center gap-2 mb-3">
-            <Key className="h-4 w-4 text-muted-foreground" />
-            <h4 className="font-medium text-foreground">Gemini API Key</h4>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Key className="h-4 w-4 text-muted-foreground" />
+              <h4 className="font-medium text-foreground">Gemini API Key</h4>
+            </div>
+            {!isLoading && (
+              <div className="flex items-center gap-1.5">
+                {hasKey ? (
+                  <>
+                    <div className="h-2 w-2 rounded-full bg-green-500" />
+                    <span className="text-sm text-green-600 dark:text-green-400">Configured</span>
+                  </>
+                ) : (
+                  <>
+                    <div className="h-2 w-2 rounded-full bg-yellow-500" />
+                    <span className="text-sm text-yellow-600 dark:text-yellow-400">Not configured</span>
+                  </>
+                )}
+              </div>
+            )}
           </div>
           <p className="text-sm text-muted-foreground mb-3">
             Required for AI-powered summarization and categorization.
@@ -156,7 +364,7 @@ function ApiKeysSettings() {
               type="password"
               value={geminiKey}
               onChange={e => setGeminiKey(e.target.value)}
-              placeholder="Enter your Gemini API key"
+              placeholder={hasKey ? "Enter new key to replace existing" : "Enter your Gemini API key"}
               className="flex-1"
             />
             <Button
@@ -170,7 +378,7 @@ function ApiKeysSettings() {
               ) : (
                 <Save className="h-4 w-4" />
               )}
-              Save
+              {hasKey ? 'Update' : 'Save'}
             </Button>
           </div>
           {isSuccess && (

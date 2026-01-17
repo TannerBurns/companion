@@ -1,11 +1,12 @@
 import { clsx } from 'clsx'
-import { CheckCircle2 } from 'lucide-react'
+import { CheckCircle2, Loader2 } from 'lucide-react'
 
 interface SourceCardProps {
   icon: React.ComponentType<{ className?: string }>
   name: string
   description: string
   connected: boolean
+  isConnecting?: boolean
   onConnect: () => void
   onDisconnect: () => void
 }
@@ -15,6 +16,7 @@ export function SourceCard({
   name,
   description,
   connected,
+  isConnecting = false,
   onConnect,
   onDisconnect,
 }: SourceCardProps) {
@@ -25,7 +27,7 @@ export function SourceCard({
           <div
             className={clsx(
               'h-10 w-10 rounded-lg flex items-center justify-center',
-              connected ? 'bg-green-50 text-green-600' : 'bg-muted text-muted-foreground'
+              connected ? 'bg-green-50 text-green-600 dark:bg-green-900/20 dark:text-green-400' : 'bg-muted text-muted-foreground'
             )}
           >
             <Icon className="h-5 w-5" />
@@ -34,7 +36,7 @@ export function SourceCard({
             <div className="flex items-center gap-2">
               <h4 className="font-medium text-foreground">{name}</h4>
               {connected && (
-                <span className="inline-flex items-center gap-1 text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
+                <span className="inline-flex items-center gap-1 text-xs text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 px-2 py-0.5 rounded-full">
                   <CheckCircle2 className="h-3 w-3" />
                   Connected
                 </span>
@@ -45,14 +47,25 @@ export function SourceCard({
         </div>
         <button
           onClick={connected ? onDisconnect : onConnect}
+          disabled={isConnecting}
           className={clsx(
-            'px-3 py-1.5 text-sm font-medium rounded-lg transition-colors',
+            'px-3 py-1.5 text-sm font-medium rounded-lg transition-colors inline-flex items-center gap-2',
             connected
-              ? 'text-red-600 hover:bg-red-50'
-              : 'bg-primary-500 text-white hover:bg-primary-600'
+              ? 'text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20'
+              : 'bg-primary-500 text-white hover:bg-primary-600',
+            isConnecting && 'opacity-50 cursor-not-allowed'
           )}
         >
-          {connected ? 'Disconnect' : 'Connect'}
+          {isConnecting ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Connecting...
+            </>
+          ) : connected ? (
+            'Disconnect'
+          ) : (
+            'Connect'
+          )}
         </button>
       </div>
     </div>

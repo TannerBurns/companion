@@ -45,6 +45,55 @@ export interface Preferences {
   notificationsEnabled: boolean
 }
 
+export interface SlackChannel {
+  id: string
+  name: string
+  isPrivate: boolean
+  isIm: boolean
+  isMpim: boolean
+  /** For DMs, this is the user ID of the other person */
+  user?: string
+  memberCount?: number
+  purpose?: string
+  topic?: string
+}
+
+export interface SlackChannelSelection {
+  channelId: string
+  channelName: string
+  isPrivate: boolean
+  isIm: boolean
+  isMpim: boolean
+  teamId: string
+  memberCount?: number
+  purpose?: string
+  enabled: boolean
+}
+
+export interface SlackUser {
+  id: string
+  name: string
+  realName?: string
+  displayName?: string
+}
+
+export interface SlackConnectionStatus {
+  connected: boolean
+  teamId?: string
+  teamName?: string
+  userId?: string
+  selectedChannelCount: number
+}
+
+export interface SlackTokens {
+  accessToken: string
+  tokenType: string
+  scope: string
+  teamId: string
+  teamName: string
+  userId: string
+}
+
 export const api = {
   getDailyDigest: (date?: string) =>
     invoke<DigestResponse>('get_daily_digest', { date }),
@@ -53,7 +102,7 @@ export const api = {
     invoke<DigestResponse>('get_weekly_digest', { weekStart }),
 
   startSync: (sources?: string[]) =>
-    invoke<void>('start_sync', { sources }),
+    invoke<{ itemsSynced: number; channelsProcessed: number; errors: string[] }>('start_sync', { sources }),
 
   getSyncStatus: () =>
     invoke<SyncStatus>('get_sync_status'),
@@ -66,4 +115,33 @@ export const api = {
 
   saveApiKey: (service: string, apiKey: string) =>
     invoke<void>('save_api_key', { service, apiKey }),
+
+  hasApiKey: (service: string) =>
+    invoke<boolean>('has_api_key', { service }),
+
+  // Slack integration
+  connectSlack: (token: string) =>
+    invoke<SlackTokens>('connect_slack', { token }),
+
+  disconnectSlack: () =>
+    invoke<void>('disconnect_slack'),
+
+  listSlackChannels: () =>
+    invoke<SlackChannel[]>('list_slack_channels'),
+
+  listSlackUsers: () =>
+    invoke<SlackUser[]>('list_slack_users'),
+
+
+  saveSlackChannels: (channels: SlackChannelSelection[]) =>
+    invoke<void>('save_slack_channels', { channels }),
+
+  getSavedSlackChannels: () =>
+    invoke<SlackChannelSelection[]>('get_saved_slack_channels'),
+
+  removeSlackChannel: (channelId: string) =>
+    invoke<void>('remove_slack_channel', { channelId }),
+
+  getSlackConnectionStatus: () =>
+    invoke<SlackConnectionStatus>('get_slack_connection_status'),
 }

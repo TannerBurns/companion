@@ -68,6 +68,7 @@ fn main() {
             commands::start_sync,
             commands::get_sync_status,
             commands::save_api_key,
+            commands::has_api_key,
             commands::get_preferences,
             commands::save_preferences,
             commands::connect_slack,
@@ -76,6 +77,13 @@ fn main() {
             commands::track_event,
             commands::get_analytics_summary,
             commands::get_pipeline_status,
+            commands::list_slack_channels,
+            commands::list_slack_users,
+            commands::save_slack_channels,
+            commands::get_saved_slack_channels,
+            commands::remove_slack_channel,
+            commands::get_slack_connection_status,
+            commands::disconnect_slack,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

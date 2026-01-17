@@ -29,6 +29,7 @@ pub enum CryptoError {
     Base64(#[from] base64::DecodeError),
 }
 
+#[derive(Clone)]
 pub struct CryptoService {
     cipher: Aes256Gcm,
 }

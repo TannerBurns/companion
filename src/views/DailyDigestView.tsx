@@ -122,26 +122,6 @@ export function DailyDigestView() {
         </div>
       )}
 
-      {/* Category Summary Cards - show when items exist and no filter applied */}
-      {!isLoading && !error && filter === 'all' && data?.items && data.items.length > 0 && data?.categories && data.categories.length > 0 && (
-        <div className="mt-8 grid grid-cols-2 gap-4">
-          {data.categories.map((cat) => (
-            <div
-              key={cat.name}
-              className="bg-card border border-border rounded-lg p-4 cursor-pointer hover:shadow-md transition-shadow"
-              onClick={() => setFilter(cat.name.toLowerCase())}
-            >
-              <div className="flex items-center justify-between">
-                <h4 className="font-medium text-foreground capitalize">{cat.name}</h4>
-                <span className="text-2xl font-bold text-primary-500">{cat.count}</span>
-              </div>
-              <p className="text-sm text-muted-foreground mt-1">
-                {cat.count === 1 ? '1 item' : `${cat.count} items`}
-              </p>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   )
 }

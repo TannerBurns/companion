@@ -23,7 +23,9 @@ export function useSync() {
   const queryClient = useQueryClient()
 
   const syncMutation = useMutation({
-    mutationFn: (sources?: string[]) => api.startSync(sources),
+    mutationFn: async (sources?: string[]) => {
+      return await api.startSync(sources)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['daily-digest'] })
       queryClient.invalidateQueries({ queryKey: ['weekly-digest'] })

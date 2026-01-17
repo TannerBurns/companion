@@ -1,7 +1,7 @@
 //! Slack API client with OAuth support
 
 use reqwest::Client;
-use super::types::{SlackError, SlackTokens, SlackChannel, SlackMessage, OAuthResponse};
+use super::types::{SlackError, SlackTokens, SlackChannel, SlackMessage, OAuthResponse, SlackAuthInfo, SlackUser};
 use crate::sync::oauth::spawn_oauth_callback_listener;
 
 const SLACK_AUTHORIZE_URL: &str = "https://slack.com/oauth/v2/authorize";
@@ -14,6 +14,7 @@ pub struct SlackClient {
     client_id: String,
     client_secret: String,
     access_token: Option<String>,
+    team_id: Option<String>,
 }
 
 impl SlackClient {
@@ -23,12 +24,55 @@ impl SlackClient {
             client_id,
             client_secret,
             access_token: None,
+            team_id: None,
         }
     }
     
     pub fn with_token(mut self, access_token: String) -> Self {
         self.access_token = Some(access_token);
         self
+    }
+    
+    /// Set the team ID (required for Enterprise Grid workspaces)
+    pub fn with_team_id(mut self, team_id: String) -> Self {
+        self.team_id = Some(team_id);
+        self
+    }
+    
+    /// Get a reference to the HTTP client for making direct API calls
+    pub fn http_client(&self) -> &Client {
+        &self.http
+    }
+    
+    /// Test the token and get auth info (team, user)
+    pub async fn test_auth(&self) -> Result<SlackAuthInfo, SlackError> {
+        let token = self.access_token.as_ref()
+            .ok_or_else(|| SlackError::OAuth("Not authenticated".into()))?;
+        
+        let response = self.http
+            .get(format!("{}/auth.test", SLACK_API_BASE))
+            .bearer_auth(token)
+            .send()
+            .await?;
+        
+        if !response.status().is_success() {
+            return Err(SlackError::Api(format!("HTTP {}", response.status())));
+        }
+        
+        let json: serde_json::Value = response.json().await?;
+        
+        if !json["ok"].as_bool().unwrap_or(false) {
+            return Err(SlackError::Api(
+                json["error"].as_str().unwrap_or("Unknown error").to_string()
+            ));
+        }
+        
+        Ok(SlackAuthInfo {
+            team_id: json["team_id"].as_str().unwrap_or_default().to_string(),
+            team_name: json["team"].as_str().unwrap_or_default().to_string(),
+            user_id: json["user_id"].as_str().unwrap_or_default().to_string(),
+            user_name: json["user"].as_str().unwrap_or_default().to_string(),
+        })
     }
     
     /// Generate OAuth authorization URL
@@ -120,13 +164,26 @@ impl SlackClient {
             .ok_or_else(|| SlackError::OAuth("Not authenticated".into()))?;
         
         let mut all_channels = Vec::new();
-        let mut cursor: Option<String> = None;
         
-        loop {
-            let mut params = vec![
-                ("types", "public_channel,private_channel,mpim,im"),
-                ("limit", "200"),
-            ];
+        // Fetch each type separately for better Enterprise Grid compatibility
+        let channel_types = ["public_channel", "private_channel", "mpim", "im"];
+        
+        for channel_type in channel_types {
+            let mut cursor: Option<String> = None;
+            
+            loop {
+                let mut params = vec![
+                    ("types", channel_type),
+                    ("limit", "1000"),
+                    ("exclude_archived", "false"),
+                ];
+            
+            // For Enterprise Grid, team_id is required
+            let team_id_str;
+            if let Some(ref tid) = self.team_id {
+                team_id_str = tid.clone();
+                params.push(("team_id", &team_id_str));
+            }
             
             let cursor_str;
             if let Some(ref c) = cursor {
@@ -148,30 +205,41 @@ impl SlackClient {
             let json: serde_json::Value = response.json().await?;
             
             if !json["ok"].as_bool().unwrap_or(false) {
-                return Err(SlackError::Api(
-                    json["error"].as_str().unwrap_or("Unknown error").to_string()
-                ));
+                let error = json["error"].as_str().unwrap_or("Unknown error");
+                return Err(SlackError::Api(error.to_string()));
             }
             
             if let Some(channels) = json["channels"].as_array() {
                 for ch in channels {
+                    let is_private = ch["is_private"].as_bool().unwrap_or(false);
+                    let is_im = ch["is_im"].as_bool().unwrap_or(false);
+                    let is_mpim = ch["is_mpim"].as_bool().unwrap_or(false);
+                    let is_group = ch["is_group"].as_bool().unwrap_or(false);
+                    
                     all_channels.push(SlackChannel {
                         id: ch["id"].as_str().unwrap_or_default().to_string(),
                         name: ch["name"].as_str().unwrap_or_default().to_string(),
-                        is_private: ch["is_private"].as_bool().unwrap_or(false),
-                        is_im: ch["is_im"].as_bool().unwrap_or(false),
-                        is_mpim: ch["is_mpim"].as_bool().unwrap_or(false),
+                        // Private channels can have is_private=true OR is_group=true (legacy)
+                        is_private: is_private || is_group,
+                        is_im,
+                        is_mpim,
+                        // For DMs, capture the user ID of the other person
+                        user: ch["user"].as_str().map(String::from),
+                        member_count: ch["num_members"].as_i64().map(|n| n as i32),
+                        purpose: ch["purpose"]["value"].as_str().map(String::from),
+                        topic: ch["topic"]["value"].as_str().map(String::from),
                     });
                 }
             }
             
-            cursor = json["response_metadata"]["next_cursor"]
-                .as_str()
-                .filter(|c| !c.is_empty())
-                .map(String::from);
-            
-            if cursor.is_none() {
-                break;
+                cursor = json["response_metadata"]["next_cursor"]
+                    .as_str()
+                    .filter(|c| !c.is_empty())
+                    .map(String::from);
+                
+                if cursor.is_none() {
+                    break;
+                }
             }
         }
         
@@ -217,7 +285,7 @@ impl SlackClient {
             ));
         }
         
-        let messages = json["messages"]
+        let messages: Vec<SlackMessage> = json["messages"]
             .as_array()
             .map(|msgs| {
                 msgs.iter()
@@ -235,6 +303,114 @@ impl SlackClient {
         Ok(messages)
     }
     
+    /// Fetch user info by ID
+    pub async fn get_user_info(&self, user_id: &str) -> Result<SlackUser, SlackError> {
+        let token = self.access_token.as_ref()
+            .ok_or_else(|| SlackError::OAuth("Not authenticated".into()))?;
+        
+        let response = self.http
+            .get(format!("{}/users.info", SLACK_API_BASE))
+            .bearer_auth(token)
+            .query(&[("user", user_id)])
+            .send()
+            .await?;
+        
+        if !response.status().is_success() {
+            return Err(SlackError::Api(format!("HTTP {}", response.status())));
+        }
+        
+        let json: serde_json::Value = response.json().await?;
+        
+        if !json["ok"].as_bool().unwrap_or(false) {
+            return Err(SlackError::Api(
+                json["error"].as_str().unwrap_or("Unknown error").to_string()
+            ));
+        }
+        
+        let user = &json["user"];
+        Ok(SlackUser {
+            id: user["id"].as_str().unwrap_or_default().to_string(),
+            name: user["name"].as_str().unwrap_or_default().to_string(),
+            real_name: user["real_name"].as_str().map(String::from),
+            display_name: user["profile"]["display_name"].as_str()
+                .filter(|s| !s.is_empty())
+                .map(String::from),
+        })
+    }
+
+    /// Fetch all users (for resolving DM names)
+    pub async fn list_users(&self) -> Result<Vec<SlackUser>, SlackError> {
+        let token = self.access_token.as_ref()
+            .ok_or_else(|| SlackError::OAuth("Not authenticated".into()))?;
+        
+        let mut all_users = Vec::new();
+        let mut cursor: Option<String> = None;
+        
+        loop {
+            let mut params = vec![("limit", "200".to_string())];
+            
+            // Include team_id for Enterprise Grid
+            if let Some(ref tid) = self.team_id {
+                params.push(("team_id", tid.clone()));
+            }
+            
+            if let Some(ref c) = cursor {
+                params.push(("cursor", c.clone()));
+            }
+            
+            let response = self.http
+                .get(format!("{}/users.list", SLACK_API_BASE))
+                .bearer_auth(token)
+                .query(&params)
+                .send()
+                .await?;
+            
+            if !response.status().is_success() {
+                return Err(SlackError::Api(format!("HTTP {}", response.status())));
+            }
+            
+            let json: serde_json::Value = response.json().await?;
+            
+            if !json["ok"].as_bool().unwrap_or(false) {
+                return Err(SlackError::Api(
+                    json["error"].as_str().unwrap_or("Unknown error").to_string()
+                ));
+            }
+            
+            if let Some(users) = json["members"].as_array() {
+                for user in users {
+                    // Skip bots and deleted users
+                    if user["is_bot"].as_bool().unwrap_or(false) {
+                        continue;
+                    }
+                    if user["deleted"].as_bool().unwrap_or(false) {
+                        continue;
+                    }
+                    
+                    all_users.push(SlackUser {
+                        id: user["id"].as_str().unwrap_or_default().to_string(),
+                        name: user["name"].as_str().unwrap_or_default().to_string(),
+                        real_name: user["real_name"].as_str().map(String::from),
+                        display_name: user["profile"]["display_name"].as_str()
+                            .filter(|s| !s.is_empty())
+                            .map(String::from),
+                    });
+                }
+            }
+            
+            cursor = json["response_metadata"]["next_cursor"]
+                .as_str()
+                .filter(|c| !c.is_empty())
+                .map(String::from);
+            
+            if cursor.is_none() {
+                break;
+            }
+        }
+        
+        Ok(all_users)
+    }
+
     /// Fetch thread replies
     pub async fn get_thread_replies(
         &self,
