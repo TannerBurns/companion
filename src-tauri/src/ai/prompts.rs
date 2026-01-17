@@ -199,8 +199,8 @@ The following topics were already identified from earlier sync cycles today. Whe
 
 IMPORTANT MERGING RULES:
 - If new messages relate to an existing topic, include the existing topic_id in your response and UPDATE the summary/highlights to incorporate the new information
-- Combine the message_ids (new ones will be added to the existing list)
-- Update channels and people lists to include any new participants
+- For message_ids: only include the NEW message IDs from this batch (the system will automatically merge them with existing IDs)
+- Update channels and people lists to include any new participants (combine with existing)
 - Update the summary to reflect ALL information (existing + new)
 - Only create a NEW topic if the discussion is genuinely different from all existing topics
 - When updating an existing topic, use the SAME topic_id from the existing topic

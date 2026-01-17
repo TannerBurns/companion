@@ -107,6 +107,10 @@ impl ProcessingPipeline {
         .await
         .map_err(|e| e.to_string())?;
 
+        // Build a map of topic_id -> existing message_ids for later merging
+        let mut existing_message_ids_map: std::collections::HashMap<String, Vec<String>> = 
+            std::collections::HashMap::new();
+        
         let existing_topics: Vec<ExistingTopic> = existing_topic_rows.iter().filter_map(|row| {
             let entities: serde_json::Value = row.entities.as_ref()
                 .and_then(|e| serde_json::from_str(e).ok())
@@ -122,6 +126,9 @@ impl ProcessingPipeline {
             let message_ids: Vec<String> = entities.get("message_ids")
                 .and_then(|v| serde_json::from_value(v.clone()).ok())
                 .unwrap_or_default();
+            
+            // Store the existing message_ids for later merging when updating topics
+            existing_message_ids_map.insert(row.id.clone(), message_ids.clone());
             
             Some(ExistingTopic {
                 topic_id: row.id.clone(),
@@ -196,13 +203,6 @@ impl ProcessingPipeline {
             let topic_id = group.topic_id.clone()
                 .unwrap_or_else(|| generate_topic_id(&group.topic, &date_str));
             
-            let entities_json = serde_json::to_string(&serde_json::json!({
-                "topic": &group.topic,
-                "channels": &group.channels,
-                "people": &group.people,
-                "message_ids": &group.message_ids
-            })).unwrap_or_default();
-            
             let existing: Option<(String,)> = sqlx::query_as(
                 "SELECT id FROM ai_summaries WHERE id = ?"
             )
@@ -211,8 +211,36 @@ impl ProcessingPipeline {
             .await
             .map_err(|e| e.to_string())?;
 
+            // Merge message_ids: combine existing ones with new ones from AI response
+            let merged_message_ids: Vec<String> = if existing.is_some() {
+                let mut merged: Vec<String> = existing_message_ids_map
+                    .get(&topic_id)
+                    .cloned()
+                    .unwrap_or_default();
+                
+                // Add new message_ids that aren't already in the list
+                for msg_id in &group.message_ids {
+                    if !merged.contains(msg_id) {
+                        merged.push(msg_id.clone());
+                    }
+                }
+                merged
+            } else {
+                group.message_ids.clone()
+            };
+            
+            let entities_json = serde_json::to_string(&serde_json::json!({
+                "topic": &group.topic,
+                "channels": &group.channels,
+                "people": &group.people,
+                "message_ids": &merged_message_ids
+            })).unwrap_or_default();
+
             if existing.is_some() {
-                tracing::info!("Updating existing topic: {}", group.topic);
+                tracing::info!("Updating existing topic: {} (merging {} existing + {} new message_ids)", 
+                    group.topic, 
+                    existing_message_ids_map.get(&topic_id).map(|v| v.len()).unwrap_or(0),
+                    group.message_ids.len());
                 sqlx::query(
                     "UPDATE ai_summaries 
                      SET summary = ?, highlights = ?, category = ?, category_confidence = ?, importance_score = ?, entities = ?, generated_at = ?
@@ -686,5 +714,102 @@ mod tests {
             .unwrap_or(serde_json::json!({}));
         
         assert!(entities.as_object().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_message_ids_merge_logic() {
+        // Simulate the merging logic used in process_daily_batch
+        let existing_message_ids: Vec<String> = vec![
+            "msg1".to_string(),
+            "msg2".to_string(),
+            "msg3".to_string(),
+        ];
+        
+        let new_message_ids: Vec<String> = vec![
+            "msg3".to_string(), // Duplicate - should not be added
+            "msg4".to_string(), // New - should be added
+            "msg5".to_string(), // New - should be added
+        ];
+        
+        // Replicate the merge logic from process_daily_batch
+        let mut merged = existing_message_ids.clone();
+        for msg_id in &new_message_ids {
+            if !merged.contains(msg_id) {
+                merged.push(msg_id.clone());
+            }
+        }
+        
+        assert_eq!(merged.len(), 5);
+        assert_eq!(merged, vec!["msg1", "msg2", "msg3", "msg4", "msg5"]);
+    }
+
+    #[test]
+    fn test_message_ids_merge_preserves_order() {
+        let existing: Vec<String> = vec!["a".into(), "b".into(), "c".into()];
+        let new: Vec<String> = vec!["d".into(), "e".into()];
+        
+        let mut merged = existing.clone();
+        for msg_id in &new {
+            if !merged.contains(msg_id) {
+                merged.push(msg_id.clone());
+            }
+        }
+        
+        // Existing messages stay at the front in original order
+        assert_eq!(merged[0], "a");
+        assert_eq!(merged[1], "b");
+        assert_eq!(merged[2], "c");
+        // New messages appended at the end
+        assert_eq!(merged[3], "d");
+        assert_eq!(merged[4], "e");
+    }
+
+    #[test]
+    fn test_message_ids_merge_empty_existing() {
+        let existing: Vec<String> = vec![];
+        let new: Vec<String> = vec!["msg1".into(), "msg2".into()];
+        
+        let mut merged = existing.clone();
+        for msg_id in &new {
+            if !merged.contains(msg_id) {
+                merged.push(msg_id.clone());
+            }
+        }
+        
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged, vec!["msg1", "msg2"]);
+    }
+
+    #[test]
+    fn test_message_ids_merge_empty_new() {
+        let existing: Vec<String> = vec!["msg1".into(), "msg2".into()];
+        let new: Vec<String> = vec![];
+        
+        let mut merged = existing.clone();
+        for msg_id in &new {
+            if !merged.contains(msg_id) {
+                merged.push(msg_id.clone());
+            }
+        }
+        
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged, vec!["msg1", "msg2"]);
+    }
+
+    #[test]
+    fn test_message_ids_merge_all_duplicates() {
+        let existing: Vec<String> = vec!["msg1".into(), "msg2".into()];
+        let new: Vec<String> = vec!["msg1".into(), "msg2".into()];
+        
+        let mut merged = existing.clone();
+        for msg_id in &new {
+            if !merged.contains(msg_id) {
+                merged.push(msg_id.clone());
+            }
+        }
+        
+        // No new IDs added since all are duplicates
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged, vec!["msg1", "msg2"]);
     }
 }
