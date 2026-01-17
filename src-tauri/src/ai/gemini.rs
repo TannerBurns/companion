@@ -98,7 +98,7 @@ impl GeminiClient {
         Self {
             http: Client::new(),
             api_key,
-            model: "gemini-1.5-flash".to_string(),
+            model: "gemini-3-flash-preview".to_string(),
         }
     }
 
@@ -137,7 +137,7 @@ impl GeminiClient {
             tools: None,
             generation_config: Some(GenerationConfig {
                 temperature: Some(0.7),
-                max_output_tokens: Some(2048),
+                max_output_tokens: None, // Allow full output from model
                 response_mime_type: None,
             }),
         };
@@ -167,7 +167,7 @@ impl GeminiClient {
             tools: None,
             generation_config: Some(GenerationConfig {
                 temperature: Some(0.3),
-                max_output_tokens: Some(4096),
+                max_output_tokens: None, // Allow full output from model
                 response_mime_type: Some("application/json".to_string()),
             }),
         };
@@ -196,7 +196,7 @@ mod tests {
     fn test_gemini_client_new() {
         let client = GeminiClient::new("test-api-key".into());
         assert_eq!(client.api_key, "test-api-key");
-        assert_eq!(client.model, "gemini-1.5-flash");
+        assert_eq!(client.model, "gemini-3-flash-preview");
     }
 
     #[test]

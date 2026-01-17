@@ -117,7 +117,7 @@ impl GeminiClient {
         Self {
             http: Client::new(),
             api_key,
-            model: "gemini-1.5-flash".to_string(),
+            model: "gemini-3-flash-preview".to_string(),
         }
     }
 

@@ -14,3 +14,6 @@ export { ContentCard } from './ContentCard'
 // Status components
 export { OfflineIndicator } from './OfflineIndicator'
 export { PipelineStatus } from './PipelineStatus'
+
+// Integration components
+export { SlackChannelSelector } from './SlackChannelSelector'

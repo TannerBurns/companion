@@ -49,14 +49,28 @@ export function usePreferences() {
   }
 }
 
-export function useApiKey() {
+export function useApiKey(service: string) {
+  const queryClient = useQueryClient()
+
+  const query = useQuery({
+    queryKey: ['apiKey', service],
+    queryFn: () => api.hasApiKey(service),
+    staleTime: Infinity,
+  })
+
   const mutation = useMutation({
     mutationFn: ({ service, apiKey }: { service: string; apiKey: string }) =>
       api.saveApiKey(service, apiKey),
+    onSuccess: () => {
+      // Invalidate the query to refetch the key status
+      queryClient.invalidateQueries({ queryKey: ['apiKey', service] })
+    },
   })
 
   return {
-    saveApiKey: (service: string, apiKey: string) => mutation.mutate({ service, apiKey }),
+    hasKey: query.data ?? false,
+    isLoading: query.isLoading,
+    saveApiKey: (apiKey: string) => mutation.mutate({ service, apiKey }),
     isSaving: mutation.isPending,
     error: mutation.error,
     isSuccess: mutation.isSuccess,

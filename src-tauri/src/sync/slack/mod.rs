@@ -7,6 +7,6 @@ mod types;
 mod client;
 mod sync;
 
-pub use types::{SlackError, SlackTokens, SlackChannel, SlackMessage, SyncResult};
+pub use types::{SlackError, SlackTokens, SlackChannel, SlackMessage, SyncResult, SlackChannelSelection, SlackConnectionStatus, SlackAuthInfo, SlackUser};
 pub use client::SlackClient;
 pub use sync::SlackSyncService;
