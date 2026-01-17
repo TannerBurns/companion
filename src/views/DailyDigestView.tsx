@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { format, subDays, addDays, isToday } from 'date-fns'
 import { ChevronLeft, ChevronRight, RefreshCw, Calendar } from 'lucide-react'
 import { useDailyDigest, useSync } from '../hooks/useDigest'
@@ -21,9 +21,19 @@ export function DailyDigestView() {
     item => filter === 'all' || item.category.toLowerCase() === filter
   ) ?? []
 
+  const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (syncTimeoutRef.current) {
+        clearTimeout(syncTimeoutRef.current)
+      }
+    }
+  }, [])
+
   const handleSync = () => {
     sync(undefined)
-    setTimeout(() => refetch(), 1000)
+    syncTimeoutRef.current = setTimeout(() => refetch(), 1000)
   }
 
   const canGoForward = !isToday(date)
