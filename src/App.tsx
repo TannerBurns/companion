@@ -46,6 +46,9 @@ function TrayEventHandler() {
         // Component unmounted before promise resolved, clean up immediately
         fn()
       }
+    }).catch((err) => {
+      // Gracefully handle listener setup failure (e.g., running in browser without Tauri)
+      console.warn('Failed to set up tray event listener:', err)
     })
 
     return () => {
