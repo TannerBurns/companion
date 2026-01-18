@@ -213,10 +213,32 @@ impl ProcessingPipeline {
 
             // Merge message_ids: combine existing ones with new ones from AI response
             let merged_message_ids: Vec<String> = if existing.is_some() {
-                let mut merged: Vec<String> = existing_message_ids_map
-                    .get(&topic_id)
-                    .cloned()
-                    .unwrap_or_default();
+                // First try our local map (populated at start of function)
+                let mut merged: Vec<String> = if let Some(cached) = existing_message_ids_map.get(&topic_id) {
+                    cached.clone()
+                } else {
+                    // Topic exists in DB but not in our map - this means it was created by a
+                    // concurrent execution after we queried existing topics. Fetch fresh from DB
+                    // to avoid data loss.
+                    tracing::warn!(
+                        "Topic {} exists in DB but not in local map - fetching fresh to handle concurrent update",
+                        topic_id
+                    );
+                    let fresh_row: Option<(Option<String>,)> = sqlx::query_as(
+                        "SELECT entities FROM ai_summaries WHERE id = ?"
+                    )
+                    .bind(&topic_id)
+                    .fetch_optional(self.db.pool())
+                    .await
+                    .map_err(|e| e.to_string())?;
+                    
+                    fresh_row
+                        .and_then(|(entities_opt,)| entities_opt)
+                        .and_then(|e| serde_json::from_str::<serde_json::Value>(&e).ok())
+                        .and_then(|v| v.get("message_ids").cloned())
+                        .and_then(|v| serde_json::from_value(v).ok())
+                        .unwrap_or_default()
+                };
                 
                 // Add new message_ids that aren't already in the list
                 for msg_id in &group.message_ids {
@@ -237,10 +259,12 @@ impl ProcessingPipeline {
             })).unwrap_or_default();
 
             if existing.is_some() {
-                tracing::info!("Updating existing topic: {} (merging {} existing + {} new message_ids)", 
+                let existing_count = merged_message_ids.len().saturating_sub(group.message_ids.len());
+                tracing::info!("Updating existing topic: {} (merging {} existing + {} new = {} total message_ids)", 
                     group.topic, 
-                    existing_message_ids_map.get(&topic_id).map(|v| v.len()).unwrap_or(0),
-                    group.message_ids.len());
+                    existing_count,
+                    group.message_ids.len(),
+                    merged_message_ids.len());
                 sqlx::query(
                     "UPDATE ai_summaries 
                      SET summary = ?, highlights = ?, category = ?, category_confidence = ?, importance_score = ?, entities = ?, generated_at = ?

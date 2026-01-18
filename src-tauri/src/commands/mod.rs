@@ -324,13 +324,29 @@ pub async fn start_sync(
 ) -> Result<SyncResult, String> {
     tracing::info!("Sync requested for sources: {:?}", sources);
     
-    let (db, crypto, pipeline) = {
+    let (db, crypto, pipeline, sync_lock) = {
         let state = state.lock().await;
         (
             state.db.clone(),
             std::sync::Arc::new(state.crypto.clone()),
             state.pipeline.clone(),
+            state.sync_lock.clone(),
         )
+    };
+    
+    // Acquire sync lock to prevent concurrent sync/AI processing.
+    // This prevents race conditions where multiple executions could
+    // overwrite each other's topic message_id associations.
+    let _sync_guard = match sync_lock.try_lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            tracing::warn!("Sync already in progress, skipping duplicate request");
+            return Ok(SyncResult {
+                items_synced: 0,
+                channels_processed: 0,
+                errors: vec!["Sync already in progress".to_string()],
+            });
+        }
     };
     
     let mut total_items = 0;
