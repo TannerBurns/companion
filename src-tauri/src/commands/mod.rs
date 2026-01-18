@@ -334,9 +334,6 @@ pub async fn start_sync(
         )
     };
     
-    // Acquire sync lock to prevent concurrent sync/AI processing.
-    // This prevents race conditions where multiple executions could
-    // overwrite each other's topic message_id associations.
     let _sync_guard = match sync_lock.try_lock() {
         Ok(guard) => guard,
         Err(_) => {

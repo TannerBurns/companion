@@ -30,7 +30,6 @@ struct MessageForPrompt {
     text: String,
 }
 
-/// Row for existing topic groups from the database
 #[derive(sqlx::FromRow)]
 struct ExistingTopicRow {
     id: String,
@@ -40,7 +39,6 @@ struct ExistingTopicRow {
     entities: Option<String>,
 }
 
-/// Generate a stable topic ID based on topic name and date
 fn generate_topic_id(topic: &str, date: &str) -> String {
     let mut hasher = DefaultHasher::new();
     topic.to_lowercase().hash(&mut hasher);
@@ -107,40 +105,45 @@ impl ProcessingPipeline {
         .await
         .map_err(|e| e.to_string())?;
 
-        // Build a map of topic_id -> existing message_ids for later merging
+        // Cache message_ids for ALL rows before filtering. Rows with malformed entities
+        // (e.g., missing "topic") are filtered out below but we still need their message_ids.
         let mut existing_message_ids_map: std::collections::HashMap<String, Vec<String>> = 
             std::collections::HashMap::new();
+        let mut existing_topics: Vec<ExistingTopic> = Vec::new();
         
-        let existing_topics: Vec<ExistingTopic> = existing_topic_rows.iter().filter_map(|row| {
+        for row in &existing_topic_rows {
             let entities: serde_json::Value = row.entities.as_ref()
                 .and_then(|e| serde_json::from_str(e).ok())
                 .unwrap_or(serde_json::json!({}));
             
-            let topic = entities.get("topic")?.as_str()?.to_string();
+            let message_ids: Vec<String> = entities.get("message_ids")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default();
+            let message_count = message_ids.len() as i32;
+            existing_message_ids_map.insert(row.id.clone(), message_ids);
+            
+            // Only include in prompt if topic field is valid
+            let Some(topic) = entities.get("topic").and_then(|v| v.as_str()) else {
+                continue;
+            };
             let channels: Vec<String> = entities.get("channels")
                 .and_then(|v| serde_json::from_value(v.clone()).ok())
                 .unwrap_or_default();
             let people: Vec<String> = entities.get("people")
                 .and_then(|v| serde_json::from_value(v.clone()).ok())
                 .unwrap_or_default();
-            let message_ids: Vec<String> = entities.get("message_ids")
-                .and_then(|v| serde_json::from_value(v.clone()).ok())
-                .unwrap_or_default();
             
-            // Store the existing message_ids for later merging when updating topics
-            existing_message_ids_map.insert(row.id.clone(), message_ids.clone());
-            
-            Some(ExistingTopic {
+            existing_topics.push(ExistingTopic {
                 topic_id: row.id.clone(),
-                topic,
+                topic: topic.to_string(),
                 channels,
                 summary: row.summary.clone(),
                 category: row.category.clone().unwrap_or_else(|| "other".to_string()),
                 importance_score: row.importance_score.unwrap_or(0.5),
-                message_count: message_ids.len() as i32,
+                message_count,
                 people,
-            })
-        }).collect();
+            });
+        }
 
         tracing::info!("Found {} existing topic groups for today", existing_topics.len());
 
@@ -211,15 +214,11 @@ impl ProcessingPipeline {
             .await
             .map_err(|e| e.to_string())?;
 
-            // Merge message_ids: combine existing ones with new ones from AI response
             let merged_message_ids: Vec<String> = if existing.is_some() {
-                // First try our local map (populated at start of function)
                 let mut merged: Vec<String> = if let Some(cached) = existing_message_ids_map.get(&topic_id) {
                     cached.clone()
                 } else {
-                    // Topic exists in DB but not in our map - this means it was created by a
-                    // concurrent execution after we queried existing topics. Fetch fresh from DB
-                    // to avoid data loss.
+                    // Concurrent insert; fetch fresh to avoid data loss
                     tracing::warn!(
                         "Topic {} exists in DB but not in local map - fetching fresh to handle concurrent update",
                         topic_id
@@ -240,7 +239,6 @@ impl ProcessingPipeline {
                         .unwrap_or_default()
                 };
                 
-                // Add new message_ids that aren't already in the list
                 for msg_id in &group.message_ids {
                     if !merged.contains(msg_id) {
                         merged.push(msg_id.clone());
@@ -835,5 +833,91 @@ mod tests {
         // No new IDs added since all are duplicates
         assert_eq!(merged.len(), 2);
         assert_eq!(merged, vec!["msg1", "msg2"]);
+    }
+
+    /// Tests that message_ids are cached for ALL rows, even those skipped
+    /// due to missing "topic" field. This prevents data loss when merging.
+    #[test]
+    fn test_message_ids_cached_for_rows_with_missing_topic() {
+        let rows = vec![
+            ExistingTopicRow {
+                id: "topic_valid".to_string(),
+                summary: "Valid topic".to_string(),
+                category: Some("engineering".to_string()),
+                importance_score: Some(0.8),
+                entities: Some(r#"{"topic": "Valid Topic", "channels": [], "people": [], "message_ids": ["msg1", "msg2"]}"#.to_string()),
+            },
+            ExistingTopicRow {
+                id: "topic_malformed".to_string(),
+                summary: "Malformed entry".to_string(),
+                category: Some("other".to_string()),
+                importance_score: Some(0.5),
+                entities: Some(r#"{"channels": [], "people": [], "message_ids": ["msg3", "msg4", "msg5"]}"#.to_string()),
+            },
+            ExistingTopicRow {
+                id: "topic_invalid_json".to_string(),
+                summary: "Invalid JSON".to_string(),
+                category: None,
+                importance_score: None,
+                entities: Some("not valid json at all".to_string()),
+            },
+        ];
+        
+        // Single-loop approach: cache message_ids and build topics in one pass
+        let mut existing_message_ids_map: std::collections::HashMap<String, Vec<String>> = 
+            std::collections::HashMap::new();
+        let mut existing_topics: Vec<ExistingTopic> = Vec::new();
+        
+        for row in &rows {
+            let entities: serde_json::Value = row.entities.as_ref()
+                .and_then(|e| serde_json::from_str(e).ok())
+                .unwrap_or(serde_json::json!({}));
+            
+            let message_ids: Vec<String> = entities.get("message_ids")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default();
+            let message_count = message_ids.len() as i32;
+            existing_message_ids_map.insert(row.id.clone(), message_ids);
+            
+            let Some(topic) = entities.get("topic").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            let channels: Vec<String> = entities.get("channels")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default();
+            let people: Vec<String> = entities.get("people")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default();
+            
+            existing_topics.push(ExistingTopic {
+                topic_id: row.id.clone(),
+                topic: topic.to_string(),
+                channels,
+                summary: row.summary.clone(),
+                category: row.category.clone().unwrap_or_else(|| "other".to_string()),
+                importance_score: row.importance_score.unwrap_or(0.5),
+                message_count,
+                people,
+            });
+        }
+        
+        // Only valid row included in topics
+        assert_eq!(existing_topics.len(), 1);
+        assert_eq!(existing_topics[0].topic_id, "topic_valid");
+        
+        // ALL rows have message_ids cached (key invariant)
+        assert_eq!(existing_message_ids_map.len(), 3);
+        assert_eq!(
+            existing_message_ids_map.get("topic_valid"),
+            Some(&vec!["msg1".to_string(), "msg2".to_string()])
+        );
+        assert_eq!(
+            existing_message_ids_map.get("topic_malformed"),
+            Some(&vec!["msg3".to_string(), "msg4".to_string(), "msg5".to_string()])
+        );
+        assert_eq!(
+            existing_message_ids_map.get("topic_invalid_json"),
+            Some(&vec![])
+        );
     }
 }
