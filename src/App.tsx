@@ -1,4 +1,6 @@
+import { useEffect } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { listen } from '@tauri-apps/api/event'
 import { ThemeProvider } from './lib/ThemeProvider'
 import { useAppStore } from './store'
 import { Layout, OfflineIndicator } from './components'
@@ -28,10 +30,26 @@ function MainContent() {
   }
 }
 
+function TrayEventHandler() {
+  const { setView } = useAppStore()
+
+  useEffect(() => {
+    const unlisten = listen('tray:open-settings', () => {
+      setView('settings')
+    })
+    return () => {
+      unlisten.then((fn) => fn())
+    }
+  }, [setView])
+
+  return null
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
+        <TrayEventHandler />
         <Layout>
           <MainContent />
         </Layout>
