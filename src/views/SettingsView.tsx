@@ -8,13 +8,10 @@ import {
   Bell,
   Clock,
   Palette,
-  Key,
-  Save,
   RefreshCw,
   Sun,
   Moon,
   Monitor,
-  Check,
   Settings,
 } from 'lucide-react'
 import { useAppStore } from '../store'
@@ -23,8 +20,9 @@ import { SourceCard, SlackChannelSelector } from '../components'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
 import { useTheme } from '../lib/useTheme'
-import { usePreferences, useApiKey } from '../hooks/usePreferences'
+import { usePreferences } from '../hooks/usePreferences'
 import { api } from '../lib/api'
+import { GeminiSettings, GoogleIcon } from './GeminiSettings'
 
 interface SettingsNavItemProps {
   icon: React.ComponentType<{ className?: string }>
@@ -313,99 +311,6 @@ function SourcesSettings() {
   )
 }
 
-function ApiKeysSettings() {
-  const [geminiKey, setGeminiKey] = useState('')
-  const { hasKey, isLoading, saveApiKey, isSaving, isSuccess } = useApiKey('gemini')
-
-  const handleSaveGemini = () => {
-    if (geminiKey.trim()) {
-      saveApiKey(geminiKey.trim())
-      setGeminiKey('')
-    }
-  }
-
-  return (
-    <div>
-      <div className="mb-6">
-        <h3 className="text-lg font-semibold text-foreground">API Keys</h3>
-        <p className="text-sm text-muted-foreground mt-1">
-          Configure API keys for external services.
-        </p>
-      </div>
-
-      <div className="space-y-6">
-        <div className="p-4 bg-card border border-border rounded-lg">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Key className="h-4 w-4 text-muted-foreground" />
-              <h4 className="font-medium text-foreground">Gemini API Key</h4>
-            </div>
-            {!isLoading && (
-              <div className="flex items-center gap-1.5">
-                {hasKey ? (
-                  <>
-                    <div className="h-2 w-2 rounded-full bg-green-500" />
-                    <span className="text-sm text-green-600 dark:text-green-400">Configured</span>
-                  </>
-                ) : (
-                  <>
-                    <div className="h-2 w-2 rounded-full bg-yellow-500" />
-                    <span className="text-sm text-yellow-600 dark:text-yellow-400">Not configured</span>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-          <p className="text-sm text-muted-foreground mb-3">
-            Required for AI-powered summarization and categorization.
-          </p>
-          <div className="flex gap-2">
-            <Input
-              type="password"
-              value={geminiKey}
-              onChange={e => setGeminiKey(e.target.value)}
-              placeholder={hasKey ? "Enter new key to replace existing" : "Enter your Gemini API key"}
-              className="flex-1"
-            />
-            <Button
-              onClick={handleSaveGemini}
-              disabled={isSaving || !geminiKey.trim()}
-            >
-              {isSaving ? (
-                <RefreshCw className="h-4 w-4 animate-spin" />
-              ) : isSuccess ? (
-                <Check className="h-4 w-4" />
-              ) : (
-                <Save className="h-4 w-4" />
-              )}
-              {hasKey ? 'Update' : 'Save'}
-            </Button>
-          </div>
-          {isSuccess && (
-            <p className="mt-2 text-sm text-green-600 dark:text-green-400">
-              API key saved successfully!
-            </p>
-          )}
-        </div>
-
-        <div className="p-4 bg-muted/50 rounded-lg">
-          <p className="text-sm text-muted-foreground">
-            Get your Gemini API key from the{' '}
-            <a
-              href="https://aistudio.google.com/app/apikey"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-primary-500 hover:underline"
-            >
-              Google AI Studio
-            </a>
-          </p>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 function NotificationsSettings() {
   const { preferences, save, isSaving } = usePreferences()
 
@@ -581,7 +486,7 @@ const SETTINGS_SECTIONS: Array<{
   label: string
 }> = [
   { id: 'sources', icon: Link2, label: 'Sources' },
-  { id: 'api-keys', icon: Key, label: 'API Keys' },
+  { id: 'api-keys', icon: GoogleIcon, label: 'Gemini' },
   { id: 'notifications', icon: Bell, label: 'Notifications' },
   { id: 'sync', icon: Clock, label: 'Sync' },
   { id: 'appearance', icon: Palette, label: 'Appearance' },
@@ -595,7 +500,7 @@ export function SettingsView() {
       case 'sources':
         return <SourcesSettings />
       case 'api-keys':
-        return <ApiKeysSettings />
+        return <GeminiSettings />
       case 'notifications':
         return <NotificationsSettings />
       case 'sync':

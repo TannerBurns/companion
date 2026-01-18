@@ -4,7 +4,7 @@ pub use slack::*;
 use crate::AppState;
 use crate::sync::{AtlassianClient, AtlassianTokens, CloudResource, sync_slack_now};
 use crate::pipeline::{PipelineState, PipelineTaskType};
-use crate::ai::ProcessingPipeline;
+use crate::ai::{ProcessingPipeline, GeminiClient, ServiceAccountCredentials};
 use chrono::Datelike;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -12,6 +12,45 @@ use tauri::State;
 use tokio::sync::Mutex;
 
 type GroupRow = (String, String, Option<String>, Option<String>, Option<f64>, Option<String>, i64);
+
+/// Helper function to get Gemini API key from either service account or API key credentials
+async fn get_gemini_client(
+    db: std::sync::Arc<crate::db::Database>,
+    crypto: std::sync::Arc<crate::crypto::CryptoService>,
+) -> Option<String> {
+    // Try service account first
+    let service_account: Option<(String,)> = sqlx::query_as(
+        "SELECT encrypted_data FROM credentials WHERE id = 'gemini_service_account'"
+    )
+    .fetch_optional(db.pool())
+    .await
+    .ok()?;
+    
+    if let Some((encrypted_json,)) = service_account {
+        if let Ok(json_content) = crypto.decrypt_string(&encrypted_json) {
+            if let Ok(_credentials) = serde_json::from_str::<ServiceAccountCredentials>(&json_content) {
+                // Return with prefix so ProcessingPipeline can identify auth type
+                return Some(format!("SERVICE_ACCOUNT:{}", json_content));
+            }
+        }
+    }
+    
+    // Try API key
+    let api_key: Option<(String,)> = sqlx::query_as(
+        "SELECT encrypted_data FROM credentials WHERE id = 'gemini'"
+    )
+    .fetch_optional(db.pool())
+    .await
+    .ok()?;
+    
+    if let Some((encrypted_key,)) = api_key {
+        if let Ok(key) = crypto.decrypt_string(&encrypted_key) {
+            return Some(key);
+        }
+    }
+    
+    None
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -72,22 +111,37 @@ pub struct Preferences {
 pub async fn get_daily_digest(
     state: State<'_, Arc<Mutex<AppState>>>,
     date: Option<String>,
+    timezone_offset: Option<i32>,
 ) -> Result<DigestResponse, String> {
-    let date_str = date.unwrap_or_else(|| chrono::Utc::now().format("%Y-%m-%d").to_string());
+    // JS getTimezoneOffset() returns minutes, positive for west of UTC
+    let offset_minutes = timezone_offset.unwrap_or(0);
+    
+    let date_str = date.unwrap_or_else(|| {
+        let now_utc = chrono::Utc::now();
+        let offset = chrono::FixedOffset::west_opt(offset_minutes * 60).unwrap_or(chrono::FixedOffset::east_opt(0).unwrap());
+        now_utc.with_timezone(&offset).format("%Y-%m-%d").to_string()
+    });
     
     let db = {
         let state = state.lock().await;
         state.db.clone()
     };
     
-    // Parse date and get timestamp range
     let parsed_date = chrono::NaiveDate::parse_from_str(&date_str, "%Y-%m-%d")
         .map_err(|e| e.to_string())?;
-    let start_ts = parsed_date
+    
+    // Convert local midnight to UTC timestamp
+    let local_offset = chrono::FixedOffset::west_opt(offset_minutes * 60)
+        .unwrap_or(chrono::FixedOffset::east_opt(0).unwrap());
+    
+    let local_midnight = parsed_date
         .and_hms_opt(0, 0, 0)
         .ok_or("Invalid date")?
-        .and_utc()
-        .timestamp_millis();
+        .and_local_timezone(local_offset)
+        .single()
+        .ok_or("Ambiguous or invalid local time")?;
+    
+    let start_ts = local_midnight.with_timezone(&chrono::Utc).timestamp_millis();
     let end_ts = start_ts + 86400 * 1000; // 24 hours
     
     // Fetch group summaries (cross-channel grouped content)
@@ -186,30 +240,40 @@ pub async fn get_daily_digest(
 pub async fn get_weekly_digest(
     state: State<'_, Arc<Mutex<AppState>>>,
     week_start: Option<String>,
+    timezone_offset: Option<i32>,
 ) -> Result<DigestResponse, String> {
+    let offset_minutes = timezone_offset.unwrap_or(0);
+    let local_offset = chrono::FixedOffset::west_opt(offset_minutes * 60)
+        .unwrap_or(chrono::FixedOffset::east_opt(0).unwrap());
+    
     let db = {
         let state = state.lock().await;
         state.db.clone()
     };
     
     // Calculate week start (Monday) if not provided
-    let today = chrono::Utc::now().date_naive();
+    let now_utc = chrono::Utc::now();
+    let today_local = now_utc.with_timezone(&local_offset).date_naive();
+    
     let week_start_date = if let Some(ref ws) = week_start {
         chrono::NaiveDate::parse_from_str(ws, "%Y-%m-%d")
             .map_err(|e| e.to_string())?
     } else {
-        // Get Monday of current week
-        let days_since_monday = today.weekday().num_days_from_monday();
-        today - chrono::Duration::days(days_since_monday as i64)
+        // Get Monday of current week in local timezone
+        let days_since_monday = today_local.weekday().num_days_from_monday();
+        today_local - chrono::Duration::days(days_since_monday as i64)
     };
     
     let week_start_str = week_start_date.format("%Y-%m-%d").to_string();
     
-    let start_ts = week_start_date
+    let local_midnight = week_start_date
         .and_hms_opt(0, 0, 0)
         .ok_or("Invalid date")?
-        .and_utc()
-        .timestamp_millis();
+        .and_local_timezone(local_offset)
+        .single()
+        .ok_or("Ambiguous or invalid local time")?;
+    
+    let start_ts = local_midnight.with_timezone(&chrono::Utc).timestamp_millis();
     let end_ts = start_ts + 7 * 86400 * 1000;
     
     let groups: Vec<GroupRow> = sqlx::query_as(
@@ -259,8 +323,9 @@ pub async fn get_weekly_digest(
         items.push(item);
     }
     
-    let daily_summaries: Vec<(String, Option<String>)> = sqlx::query_as(
-        "SELECT summary, highlights FROM ai_summaries 
+    // Fetch individual daily summaries with their timestamps
+    let daily_summaries: Vec<(String, String, Option<String>, i64)> = sqlx::query_as(
+        "SELECT id, summary, highlights, generated_at FROM ai_summaries 
          WHERE summary_type = 'daily' AND generated_at >= ? AND generated_at < ?
          ORDER BY generated_at DESC"
     )
@@ -270,34 +335,27 @@ pub async fn get_weekly_digest(
     .await
     .map_err(|e| e.to_string())?;
     
-    if !daily_summaries.is_empty() {
-        let combined_summary = daily_summaries
-            .iter()
-            .map(|(s, _)| s.as_str())
-            .collect::<Vec<_>>()
-            .join(" ");
+    // Add individual daily overview items with their actual dates
+    for (id, summary, highlights_json, generated_at) in &daily_summaries {
+        let highlights: Option<Vec<String>> = highlights_json
+            .as_ref()
+            .and_then(|h| serde_json::from_str(h).ok());
         
-        let mut all_themes: Vec<String> = Vec::new();
-        for (_, highlights_json) in &daily_summaries {
-            if let Some(h) = highlights_json {
-                if let Ok(themes) = serde_json::from_str::<Vec<String>>(h) {
-                    all_themes.extend(themes);
-                }
-            }
-        }
-        all_themes.sort();
-        all_themes.dedup();
+        // Convert generated_at to a date string for the title
+        let date_display = chrono::DateTime::from_timestamp_millis(*generated_at)
+            .map(|dt| dt.with_timezone(&local_offset).format("%A, %b %d").to_string())
+            .unwrap_or_else(|| "Daily".to_string());
         
-        items.insert(0, DigestItem {
-            id: "weekly-summary".to_string(),
-            title: format!("Week of {}", week_start_str),
-            summary: combined_summary,
-            highlights: if all_themes.is_empty() { None } else { Some(all_themes) },
+        items.push(DigestItem {
+            id: id.clone(),
+            title: format!("{} Overview", date_display),
+            summary: summary.clone(),
+            highlights,
             category: "overview".to_string(),
             source: "ai".to_string(),
             source_url: None,
-            importance_score: 1.0,
-            created_at: start_ts,
+            importance_score: 0.95, // High but below 1.0 so they sort after group items
+            created_at: *generated_at,
         });
     }
     
@@ -321,8 +379,9 @@ pub async fn get_weekly_digest(
 pub async fn start_sync(
     state: State<'_, Arc<Mutex<AppState>>>,
     sources: Option<Vec<String>>,
+    timezone_offset: Option<i32>,
 ) -> Result<SyncResult, String> {
-    tracing::info!("Sync requested for sources: {:?}", sources);
+    tracing::info!("Sync requested for sources: {:?}, timezone_offset: {:?}", sources, timezone_offset);
     
     let (db, crypto, pipeline, sync_lock) = {
         let state = state.lock().await;
@@ -397,43 +456,33 @@ pub async fn start_sync(
     if total_items > 0 {
         tracing::info!("Running AI batch processing on {} new items...", total_items);
         
-        // Check for Gemini API key
-        let gemini_key: Option<(String,)> = sqlx::query_as(
-            "SELECT encrypted_data FROM credentials WHERE id = 'gemini'"
-        )
-        .fetch_optional(db.pool())
-        .await
-        .ok()
-        .flatten();
+        // Try to get Gemini credentials (service account first, then API key)
+        let gemini_client = get_gemini_client(db.clone(), crypto.clone()).await;
         
-        if let Some((encrypted_key,)) = gemini_key {
-            if let Ok(api_key) = crypto.decrypt_string(&encrypted_key) {
-                // Start AI summarization task
-                let task_id = {
+        if let Some(api_key_or_client) = gemini_client {
+            // Start AI summarization task
+            let task_id = {
+                let pipeline = pipeline.lock().await;
+                pipeline.start_task(PipelineTaskType::AiSummarize, "Analyzing and grouping content with AI...".to_string()).await
+            };
+            
+            let ai_pipeline = ProcessingPipeline::new(api_key_or_client, db.clone(), crypto.clone());
+            // Use batch processing to group related content across channels
+            match ai_pipeline.process_daily_batch(timezone_offset).await {
+                Ok(processed) => {
+                    tracing::info!("AI batch processed {} groups/items", processed);
                     let pipeline = pipeline.lock().await;
-                    pipeline.start_task(PipelineTaskType::AiSummarize, "Analyzing and grouping content with AI...".to_string()).await
-                };
-                
-                let ai_pipeline = ProcessingPipeline::new(api_key, db.clone(), crypto.clone());
-                // Use batch processing to group related content across channels
-                match ai_pipeline.process_daily_batch().await {
-                    Ok(processed) => {
-                        tracing::info!("AI batch processed {} groups/items", processed);
-                        let pipeline = pipeline.lock().await;
-                        pipeline.complete_task(&task_id, Some(format!("Grouped and summarized {} items", processed))).await;
-                    }
-                    Err(e) => {
-                        tracing::error!("AI batch processing error: {}", e);
-                        let pipeline = pipeline.lock().await;
-                        pipeline.fail_task(&task_id, e.clone()).await;
-                        errors.push(format!("AI: {}", e));
-                    }
+                    pipeline.complete_task(&task_id, Some(format!("Grouped and summarized {} items", processed))).await;
                 }
-            } else {
-                tracing::error!("Failed to decrypt Gemini API key");
+                Err(e) => {
+                    tracing::error!("AI batch processing error: {}", e);
+                    let pipeline = pipeline.lock().await;
+                    pipeline.fail_task(&task_id, e.clone()).await;
+                    errors.push(format!("AI: {}", e));
+                }
             }
         } else {
-            tracing::debug!("No Gemini API key configured, skipping AI processing");
+            tracing::debug!("No Gemini credentials configured, skipping AI processing");
         }
     }
     
@@ -493,6 +542,15 @@ pub async fn save_api_key(
     .await
     .map_err(|e| e.to_string())?;
     
+    // When saving a Gemini API key, delete any existing service account credentials
+    // so the API key takes priority (get_gemini_client checks service account first)
+    if service == "gemini" {
+        sqlx::query("DELETE FROM credentials WHERE id = 'gemini_service_account'")
+            .execute(state.db.pool())
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    
     tracing::info!("Saved encrypted API key for service: {}", service);
     Ok(())
 }
@@ -513,6 +571,150 @@ pub async fn has_api_key(
     .map_err(|e| e.to_string())?;
     
     Ok(result.is_some())
+}
+
+#[tauri::command]
+pub async fn save_gemini_credentials(
+    state: State<'_, Arc<Mutex<AppState>>>,
+    json_content: String,
+    region: Option<String>,
+) -> Result<(), String> {
+    let mut credentials: ServiceAccountCredentials = serde_json::from_str(&json_content)
+        .map_err(|e| format!("Invalid service account JSON: {}", e))?;
+    
+    if let Some(r) = region {
+        if !r.is_empty() {
+            credentials.vertex_region = Some(r);
+        }
+    }
+    
+    let json_with_region = serde_json::to_string(&credentials)
+        .map_err(|e| format!("Failed to serialize credentials: {}", e))?;
+    
+    let state = state.lock().await;
+    
+    let encrypted = state.crypto
+        .encrypt_string(&json_with_region)
+        .map_err(|e| e.to_string())?;
+    
+    let now = chrono::Utc::now().timestamp();
+    
+    sqlx::query(
+        "INSERT INTO credentials (id, service, encrypted_data, created_at, updated_at) 
+         VALUES ('gemini_service_account', 'gemini', ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET encrypted_data = ?, updated_at = ?"
+    )
+    .bind(&encrypted)
+    .bind(now)
+    .bind(now)
+    .bind(&encrypted)
+    .bind(now)
+    .execute(state.db.pool())
+    .await
+    .map_err(|e| e.to_string())?;
+    
+    sqlx::query("DELETE FROM credentials WHERE id = 'gemini'")
+        .execute(state.db.pool())
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    tracing::info!("Saved encrypted Gemini service account credentials (region: {})", 
+        credentials.region());
+    Ok(())
+}
+
+/// Verify Gemini connection works with current credentials
+#[tauri::command]
+pub async fn verify_gemini_connection(
+    state: State<'_, Arc<Mutex<AppState>>>,
+) -> Result<(), String> {
+    let (db, crypto) = {
+        let state = state.lock().await;
+        (state.db.clone(), state.crypto.clone())
+    };
+    
+    // Try service account first
+    let service_account: Option<(String,)> = sqlx::query_as(
+        "SELECT encrypted_data FROM credentials WHERE id = 'gemini_service_account'"
+    )
+    .fetch_optional(db.pool())
+    .await
+    .map_err(|e| e.to_string())?;
+    
+    if let Some((encrypted_json,)) = service_account {
+        tracing::info!("Verifying Gemini connection with service account...");
+        
+        let json_content = crypto.decrypt_string(&encrypted_json)
+            .map_err(|e| format!("Failed to decrypt credentials: {}", e))?;
+        
+        let credentials: ServiceAccountCredentials = serde_json::from_str(&json_content)
+            .map_err(|e| format!("Invalid service account JSON: {}", e))?;
+        
+        tracing::info!("Using service account: {}", credentials.client_email);
+        
+        let client = GeminiClient::new_with_service_account(credentials);
+        client.verify_connection().await
+            .map_err(|e| e.to_string())?;
+        
+        return Ok(());
+    }
+    
+    // Try API key
+    let api_key: Option<(String,)> = sqlx::query_as(
+        "SELECT encrypted_data FROM credentials WHERE id = 'gemini'"
+    )
+    .fetch_optional(db.pool())
+    .await
+    .map_err(|e| e.to_string())?;
+    
+    if let Some((encrypted_key,)) = api_key {
+        tracing::info!("Verifying Gemini connection with API key...");
+        
+        let key = crypto.decrypt_string(&encrypted_key)
+            .map_err(|e| format!("Failed to decrypt API key: {}", e))?;
+        
+        let client = GeminiClient::new(key);
+        client.verify_connection().await
+            .map_err(|e| e.to_string())?;
+        
+        return Ok(());
+    }
+    
+    Err("No Gemini credentials configured".to_string())
+}
+
+/// Get the current Gemini authentication type
+#[tauri::command]
+pub async fn get_gemini_auth_type(
+    state: State<'_, Arc<Mutex<AppState>>>,
+) -> Result<String, String> {
+    let state = state.lock().await;
+    
+    // Check for service account first
+    let service_account: Option<(String,)> = sqlx::query_as(
+        "SELECT encrypted_data FROM credentials WHERE id = 'gemini_service_account'"
+    )
+    .fetch_optional(state.db.pool())
+    .await
+    .map_err(|e| e.to_string())?;
+    
+    if service_account.is_some() {
+        return Ok("service_account".to_string());
+    }
+    
+    // Check for API key
+    let api_key: Option<(String,)> = sqlx::query_as(
+        "SELECT encrypted_data FROM credentials WHERE id = 'gemini'"
+    )
+    .fetch_optional(state.db.pool())
+    .await
+    .map_err(|e| e.to_string())?;
+    
+    if api_key.is_some() {
+        return Ok("api_key".to_string());
+    }
+    
+    Ok("none".to_string())
 }
 
 #[tauri::command]

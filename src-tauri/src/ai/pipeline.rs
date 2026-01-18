@@ -4,7 +4,7 @@ use chrono::Utc;
 use serde::Serialize;
 use crate::db::Database;
 use crate::crypto::CryptoService;
-use super::gemini::GeminiClient;
+use super::gemini::{GeminiClient, ServiceAccountCredentials};
 use super::prompts::{self, SummaryResult, GroupedAnalysisResult, ExistingTopic};
 
 #[derive(sqlx::FromRow)]
@@ -52,23 +52,55 @@ pub struct ProcessingPipeline {
 }
 
 impl ProcessingPipeline {
-    pub fn new(api_key: String, db: Arc<Database>, crypto: Arc<CryptoService>) -> Self {
+    /// Create a new ProcessingPipeline.
+    /// The `api_key_or_credentials` parameter can be:
+    /// - A plain API key string
+    /// - A string prefixed with "SERVICE_ACCOUNT:" followed by JSON credentials
+    pub fn new(api_key_or_credentials: String, db: Arc<Database>, crypto: Arc<CryptoService>) -> Self {
+        let gemini = if let Some(json_str) = api_key_or_credentials.strip_prefix("SERVICE_ACCOUNT:") {
+            match serde_json::from_str::<ServiceAccountCredentials>(json_str) {
+                Ok(credentials) => GeminiClient::new_with_service_account(credentials),
+                Err(e) => {
+                    tracing::error!("Failed to parse service account credentials: {}", e);
+                    // Don't fall back to API key mode with the prefixed string - it would cause
+                    // confusing auth errors. Use empty string so failures are clearly about missing credentials.
+                    GeminiClient::new(String::new())
+                }
+            }
+        } else {
+            GeminiClient::new(api_key_or_credentials)
+        };
+        
         Self {
-            gemini: GeminiClient::new(api_key),
+            gemini,
             db,
             crypto,
         }
     }
 
-    pub async fn process_daily_batch(&self) -> Result<i32, String> {
-        let today = Utc::now().date_naive();
+    /// Process daily batch with optional timezone offset.
+    /// `timezone_offset_minutes`: Minutes offset from UTC (positive = west of UTC, e.g., PST = 480)
+    /// This matches JavaScript's `Date.getTimezoneOffset()` convention.
+    pub async fn process_daily_batch(&self, timezone_offset_minutes: Option<i32>) -> Result<i32, String> {
+        let offset_minutes = timezone_offset_minutes.unwrap_or(0);
+        
+        // Calculate local date and time boundaries
+        let now_utc = Utc::now();
+        let offset = chrono::FixedOffset::west_opt(offset_minutes * 60)
+            .unwrap_or(chrono::FixedOffset::east_opt(0).unwrap());
+        let local_now = now_utc.with_timezone(&offset);
+        let today = local_now.date_naive();
         let date_str = today.format("%Y-%m-%d").to_string();
         
-        let start_ts = today
+        // Convert local midnight to UTC timestamp
+        let local_midnight = today
             .and_hms_opt(0, 0, 0)
             .ok_or("Invalid date")?
-            .and_utc()
-            .timestamp_millis();
+            .and_local_timezone(offset)
+            .single()
+            .ok_or("Ambiguous or invalid local time")?;
+        
+        let start_ts = local_midnight.with_timezone(&Utc).timestamp_millis();
         let end_ts = start_ts + 86400 * 1000;
 
         let items: Vec<ContentItemRow> = sqlx::query_as(
@@ -535,19 +567,41 @@ impl ProcessingPipeline {
             .map_err(|e| e.to_string())?;
 
         let now = chrono::Utc::now().timestamp_millis();
-        let digest_id = uuid::Uuid::new_v4().to_string();
+        let digest_id = format!("daily_{}", date);
         
-        sqlx::query(
-            "INSERT INTO ai_summaries (id, summary_type, summary, highlights, generated_at)
-             VALUES (?, 'daily', ?, ?, ?)"
+        // Check if daily summary already exists for this date
+        let existing: Option<(String,)> = sqlx::query_as(
+            "SELECT id FROM ai_summaries WHERE id = ?"
         )
         .bind(&digest_id)
-        .bind(&digest.summary)
-        .bind(serde_json::to_string(&digest.key_themes).unwrap())
-        .bind(now)
-        .execute(self.db.pool())
+        .fetch_optional(self.db.pool())
         .await
         .map_err(|e| e.to_string())?;
+        
+        if existing.is_some() {
+            sqlx::query(
+                "UPDATE ai_summaries SET summary = ?, highlights = ?, generated_at = ? WHERE id = ?"
+            )
+            .bind(&digest.summary)
+            .bind(serde_json::to_string(&digest.key_themes).unwrap())
+            .bind(now)
+            .bind(&digest_id)
+            .execute(self.db.pool())
+            .await
+            .map_err(|e| e.to_string())?;
+        } else {
+            sqlx::query(
+                "INSERT INTO ai_summaries (id, summary_type, summary, highlights, generated_at)
+                 VALUES (?, 'daily', ?, ?, ?)"
+            )
+            .bind(&digest_id)
+            .bind(&digest.summary)
+            .bind(serde_json::to_string(&digest.key_themes).unwrap())
+            .bind(now)
+            .execute(self.db.pool())
+            .await
+            .map_err(|e| e.to_string())?;
+        }
 
         Ok(digest.summary)
     }

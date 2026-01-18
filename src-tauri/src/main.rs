@@ -85,6 +85,9 @@ fn main() {
             commands::remove_slack_channel,
             commands::get_slack_connection_status,
             commands::disconnect_slack,
+            commands::save_gemini_credentials,
+            commands::verify_gemini_connection,
+            commands::get_gemini_auth_type,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -40,6 +40,9 @@ urlencoding = "2"
 # OS Keychain
 keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
 
+# JWT for service account auth
+jsonwebtoken = "9"
+
 # Utilities
 thiserror = "2"
 uuid = { version = "1", features = ["v4"] }

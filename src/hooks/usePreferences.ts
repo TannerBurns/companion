@@ -71,8 +71,10 @@ export function useApiKey(service: string) {
     hasKey: query.data ?? false,
     isLoading: query.isLoading,
     saveApiKey: (apiKey: string) => mutation.mutate({ service, apiKey }),
+    saveApiKeyAsync: (apiKey: string) => mutation.mutateAsync({ service, apiKey }),
     isSaving: mutation.isPending,
     error: mutation.error,
     isSuccess: mutation.isSuccess,
+    reset: mutation.reset,
   }
 }
