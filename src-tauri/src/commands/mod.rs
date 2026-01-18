@@ -194,7 +194,7 @@ pub async fn get_daily_digest(
     
     let daily_summary: Option<(String, Option<String>)> = sqlx::query_as(
         "SELECT summary, highlights FROM ai_summaries 
-         WHERE summary_type = 'daily' AND id LIKE 'daily_%' AND generated_at >= ? AND generated_at < ?
+         WHERE summary_type = 'daily' AND generated_at >= ? AND generated_at < ?
          ORDER BY generated_at DESC LIMIT 1"
     )
     .bind(start_ts)
@@ -324,10 +324,9 @@ pub async fn get_weekly_digest(
     }
     
     // Fetch individual daily summaries with their timestamps
-    // Filter for canonical daily summaries (id starts with 'daily_') to avoid duplicates
     let daily_summaries: Vec<(String, String, Option<String>, i64)> = sqlx::query_as(
         "SELECT id, summary, highlights, generated_at FROM ai_summaries 
-         WHERE summary_type = 'daily' AND id LIKE 'daily_%' AND generated_at >= ? AND generated_at < ?
+         WHERE summary_type = 'daily' AND generated_at >= ? AND generated_at < ?
          ORDER BY generated_at DESC"
     )
     .bind(start_ts)
