@@ -113,15 +113,22 @@ impl ProcessingPipeline {
                 .and_then(|e| serde_json::from_str(e).ok())
                 .unwrap_or(serde_json::json!({}));
             
+            // Only process rows that have a valid topic field - these are the ones
+            // we'll include in the AI prompt. Rows without topics should not have
+            // their message_ids cached, as the AI won't know about them and
+            // shouldn't be able to reference them.
+            let Some(topic) = entities.get("topic").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            
             let message_ids: Vec<String> = entities.get("message_ids")
                 .and_then(|v| serde_json::from_value(v.clone()).ok())
                 .unwrap_or_default();
             let message_count: i32 = message_ids.len().try_into().unwrap_or(i32::MAX);
+            
+            // Cache message IDs only for rows that will be in existing_topics
             existing_message_ids_map.insert(row.id.clone(), message_ids);
             
-            let Some(topic) = entities.get("topic").and_then(|v| v.as_str()) else {
-                continue;
-            };
             let channels: Vec<String> = entities.get("channels")
                 .and_then(|v| serde_json::from_value(v.clone()).ok())
                 .unwrap_or_default();
