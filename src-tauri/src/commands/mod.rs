@@ -541,6 +541,15 @@ pub async fn save_api_key(
     .await
     .map_err(|e| e.to_string())?;
     
+    // When saving a Gemini API key, delete any existing service account credentials
+    // so the API key takes priority (get_gemini_client checks service account first)
+    if service == "gemini" {
+        sqlx::query("DELETE FROM credentials WHERE id = 'gemini_service_account'")
+            .execute(state.db.pool())
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    
     tracing::info!("Saved encrypted API key for service: {}", service);
     Ok(())
 }
