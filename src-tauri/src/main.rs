@@ -51,6 +51,7 @@ fn main() {
                     analytics: Some(analytics),
                     pipeline: pipeline_arc.clone(),
                     sync_queue,
+                    sync_lock: Arc::new(tokio::sync::Mutex::new(())),
                 })));
 
                 if let Err(e) = tray::init_tray(&app_handle) {
