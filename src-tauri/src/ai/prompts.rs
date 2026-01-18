@@ -210,8 +210,6 @@ IMPORTANT MERGING RULES:
         String::new()
     };
 
-    // When existing topics are provided, we show a realistic example with a comment.
-    // We use a separate line for the instruction to keep the JSON valid-looking.
     let topic_id_instruction = if existing_topics.is_some() {
         r#""topic_id": "topic_abc123","#
     } else {

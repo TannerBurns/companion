@@ -1,6 +1,5 @@
 use std::sync::Arc;
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
+use sha2::{Sha256, Digest};
 use chrono::Utc;
 use serde::Serialize;
 use crate::db::Database;
@@ -40,10 +39,11 @@ struct ExistingTopicRow {
 }
 
 fn generate_topic_id(topic: &str, date: &str) -> String {
-    let mut hasher = DefaultHasher::new();
-    topic.to_lowercase().hash(&mut hasher);
-    date.hash(&mut hasher);
-    format!("topic_{:x}", hasher.finish())
+    let mut hasher = Sha256::new();
+    hasher.update(topic.to_lowercase().as_bytes());
+    hasher.update(date.as_bytes());
+    let result = hasher.finalize();
+    format!("topic_{:x}", &result[..8].iter().fold(0u64, |acc, &b| (acc << 8) | b as u64))
 }
 
 pub struct ProcessingPipeline {
@@ -105,8 +105,6 @@ impl ProcessingPipeline {
         .await
         .map_err(|e| e.to_string())?;
 
-        // Cache message_ids for ALL rows before filtering. Rows with malformed entities
-        // (e.g., missing "topic") are filtered out below but we still need their message_ids.
         let mut existing_message_ids_map: std::collections::HashMap<String, Vec<String>> = 
             std::collections::HashMap::new();
         let mut existing_topics: Vec<ExistingTopic> = Vec::new();
@@ -122,7 +120,6 @@ impl ProcessingPipeline {
             let message_count = message_ids.len() as i32;
             existing_message_ids_map.insert(row.id.clone(), message_ids);
             
-            // Only include in prompt if topic field is valid
             let Some(topic) = entities.get("topic").and_then(|v| v.as_str()) else {
                 continue;
             };
