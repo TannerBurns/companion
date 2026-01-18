@@ -78,15 +78,29 @@ impl ProcessingPipeline {
         }
     }
 
-    pub async fn process_daily_batch(&self) -> Result<i32, String> {
-        let today = Utc::now().date_naive();
+    /// Process daily batch with optional timezone offset.
+    /// `timezone_offset_minutes`: Minutes offset from UTC (positive = west of UTC, e.g., PST = 480)
+    /// This matches JavaScript's `Date.getTimezoneOffset()` convention.
+    pub async fn process_daily_batch(&self, timezone_offset_minutes: Option<i32>) -> Result<i32, String> {
+        let offset_minutes = timezone_offset_minutes.unwrap_or(0);
+        
+        // Calculate local date and time boundaries
+        let now_utc = Utc::now();
+        let offset = chrono::FixedOffset::west_opt(offset_minutes * 60)
+            .unwrap_or(chrono::FixedOffset::east_opt(0).unwrap());
+        let local_now = now_utc.with_timezone(&offset);
+        let today = local_now.date_naive();
         let date_str = today.format("%Y-%m-%d").to_string();
         
-        let start_ts = today
+        // Convert local midnight to UTC timestamp
+        let local_midnight = today
             .and_hms_opt(0, 0, 0)
             .ok_or("Invalid date")?
-            .and_utc()
-            .timestamp_millis();
+            .and_local_timezone(offset)
+            .single()
+            .ok_or("Ambiguous or invalid local time")?;
+        
+        let start_ts = local_midnight.with_timezone(&Utc).timestamp_millis();
         let end_ts = start_ts + 86400 * 1000;
 
         let items: Vec<ContentItemRow> = sqlx::query_as(

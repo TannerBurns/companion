@@ -101,8 +101,8 @@ export const api = {
   getWeeklyDigest: (weekStart?: string, timezoneOffset?: number) =>
     invoke<DigestResponse>('get_weekly_digest', { weekStart, timezoneOffset }),
 
-  startSync: (sources?: string[]) =>
-    invoke<{ itemsSynced: number; channelsProcessed: number; errors: string[] }>('start_sync', { sources }),
+  startSync: (sources?: string[], timezoneOffset?: number) =>
+    invoke<{ itemsSynced: number; channelsProcessed: number; errors: string[] }>('start_sync', { sources, timezoneOffset }),
 
   getSyncStatus: () =>
     invoke<SyncStatus>('get_sync_status'),

@@ -379,8 +379,9 @@ pub async fn get_weekly_digest(
 pub async fn start_sync(
     state: State<'_, Arc<Mutex<AppState>>>,
     sources: Option<Vec<String>>,
+    timezone_offset: Option<i32>,
 ) -> Result<SyncResult, String> {
-    tracing::info!("Sync requested for sources: {:?}", sources);
+    tracing::info!("Sync requested for sources: {:?}, timezone_offset: {:?}", sources, timezone_offset);
     
     let (db, crypto, pipeline, sync_lock) = {
         let state = state.lock().await;
@@ -467,7 +468,7 @@ pub async fn start_sync(
             
             let ai_pipeline = ProcessingPipeline::new(api_key_or_client, db.clone(), crypto.clone());
             // Use batch processing to group related content across channels
-            match ai_pipeline.process_daily_batch().await {
+            match ai_pipeline.process_daily_batch(timezone_offset).await {
                 Ok(processed) => {
                     tracing::info!("AI batch processed {} groups/items", processed);
                     let pipeline = pipeline.lock().await;

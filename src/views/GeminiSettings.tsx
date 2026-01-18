@@ -39,7 +39,7 @@ export function GeminiSettings() {
   const [verifyResult, setVerifyResult] = useState<{ success: boolean; message: string } | null>(null)
   const [isSavingCredentials, setIsSavingCredentials] = useState(false)
   const [saveCredentialsSuccess, setSaveCredentialsSuccess] = useState(false)
-  const { hasKey, isLoading, saveApiKey, isSaving, isSuccess } = useApiKey('gemini')
+  const { hasKey, isLoading, saveApiKeyAsync, isSaving, isSuccess, error: apiKeyError, reset: resetApiKeyMutation } = useApiKey('gemini')
 
   useEffect(() => {
     const loadAuthType = async () => {
@@ -55,12 +55,21 @@ export function GeminiSettings() {
     loadAuthType()
   }, [])
 
-  const handleSaveGemini = () => {
-    if (geminiKey.trim()) {
-      saveApiKey(geminiKey.trim())
+  const handleSaveGemini = async () => {
+    if (!geminiKey.trim()) return
+    
+    // Clear any previous errors
+    resetApiKeyMutation()
+    setVerifyResult(null)
+    
+    try {
+      await saveApiKeyAsync(geminiKey.trim())
+      // Only update state after successful save
       setGeminiKey('')
       setCurrentAuthType('api_key')
-      setVerifyResult(null)
+    } catch (e) {
+      // Error is captured by the mutation and exposed via apiKeyError
+      console.error('Failed to save API key:', e)
     }
   }
 
@@ -198,6 +207,11 @@ export function GeminiSettings() {
           {isSuccess && (
             <p className="mt-2 text-sm text-green-600 dark:text-green-400">
               API key saved successfully!
+            </p>
+          )}
+          {apiKeyError && (
+            <p className="mt-2 text-sm text-red-600 dark:text-red-400">
+              Failed to save API key: {apiKeyError instanceof Error ? apiKeyError.message : 'Unknown error'}
             </p>
           )}
           <p className="mt-3 text-xs text-muted-foreground">

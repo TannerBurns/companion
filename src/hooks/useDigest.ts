@@ -19,12 +19,19 @@ export function useWeeklyDigest(weekStart?: string, timezoneOffset?: number) {
   })
 }
 
+interface SyncParams {
+  sources?: string[]
+  timezoneOffset?: number
+}
+
 export function useSync() {
   const queryClient = useQueryClient()
 
   const syncMutation = useMutation({
-    mutationFn: async (sources?: string[]) => {
-      return await api.startSync(sources)
+    mutationFn: async (params?: SyncParams) => {
+      // Default to current timezone offset if not provided
+      const timezoneOffset = params?.timezoneOffset ?? new Date().getTimezoneOffset()
+      return await api.startSync(params?.sources, timezoneOffset)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['daily-digest'] })
@@ -43,7 +50,7 @@ export function useSync() {
   })
 
   return {
-    sync: syncMutation.mutate,
+    sync: (sources?: string[]) => syncMutation.mutate({ sources }),
     isSyncing: syncMutation.isPending || statusQuery.data?.isSyncing,
     status: statusQuery.data,
     error: syncMutation.error || statusQuery.error,
