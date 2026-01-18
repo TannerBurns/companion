@@ -19,7 +19,6 @@ struct ContentItemRow {
     created_at: i64,
 }
 
-/// Message format for the batch analysis prompt
 #[derive(Serialize)]
 struct MessageForPrompt {
     id: String,
@@ -117,7 +116,7 @@ impl ProcessingPipeline {
             let message_ids: Vec<String> = entities.get("message_ids")
                 .and_then(|v| serde_json::from_value(v.clone()).ok())
                 .unwrap_or_default();
-            let message_count = message_ids.len() as i32;
+            let message_count: i32 = message_ids.len().try_into().unwrap_or(i32::MAX);
             existing_message_ids_map.insert(row.id.clone(), message_ids);
             
             let Some(topic) = entities.get("topic").and_then(|v| v.as_str()) else {
@@ -200,6 +199,7 @@ impl ProcessingPipeline {
         let mut stored_count = 0;
 
         for group in &result.groups {
+            let ai_recognized_existing = group.topic_id.is_some();
             let topic_id = group.topic_id.clone()
                 .unwrap_or_else(|| generate_topic_id(&group.topic, &date_str));
             
@@ -211,13 +211,14 @@ impl ProcessingPipeline {
             .await
             .map_err(|e| e.to_string())?;
 
-            let merged_message_ids: Vec<String> = if existing.is_some() {
+            let should_update = existing.is_some() && ai_recognized_existing;
+
+            let merged_message_ids: Vec<String> = if should_update {
                 let mut merged: Vec<String> = if let Some(cached) = existing_message_ids_map.get(&topic_id) {
                     cached.clone()
                 } else {
-                    // Concurrent insert; fetch fresh to avoid data loss
                     tracing::warn!(
-                        "Topic {} exists in DB but not in local map - fetching fresh to handle concurrent update",
+                        "Topic {} exists in DB but not in local map - fetching fresh",
                         topic_id
                     );
                     let fresh_row: Option<(Option<String>,)> = sqlx::query_as(
@@ -246,6 +247,19 @@ impl ProcessingPipeline {
                 group.message_ids.clone()
             };
             
+            let final_topic_id = if existing.is_some() && !ai_recognized_existing {
+                let unique_suffix = &uuid::Uuid::new_v4().to_string()[..8];
+                let new_id = format!("{}_{}", topic_id, unique_suffix);
+                tracing::warn!(
+                    "Topic ID collision for '{}', generating unique ID: {}",
+                    group.topic,
+                    new_id
+                );
+                new_id
+            } else {
+                topic_id
+            };
+
             let entities_json = serde_json::to_string(&serde_json::json!({
                 "topic": &group.topic,
                 "channels": &group.channels,
@@ -253,7 +267,7 @@ impl ProcessingPipeline {
                 "message_ids": &merged_message_ids
             })).unwrap_or_default();
 
-            if existing.is_some() {
+            if should_update {
                 let existing_count = merged_message_ids.len().saturating_sub(group.message_ids.len());
                 tracing::info!("Updating existing topic: {} (merging {} existing + {} new = {} total message_ids)", 
                     group.topic, 
@@ -272,17 +286,17 @@ impl ProcessingPipeline {
                 .bind(group.importance_score)
                 .bind(&entities_json)
                 .bind(now)
-                .bind(&topic_id)
+                .bind(&final_topic_id)
                 .execute(self.db.pool())
                 .await
                 .map_err(|e| e.to_string())?;
             } else {
-                tracing::info!("Creating new topic: {} (id: {})", group.topic, topic_id);
+                tracing::info!("Creating new topic: {} (id: {})", group.topic, final_topic_id);
                 sqlx::query(
                     "INSERT INTO ai_summaries (id, content_item_id, summary_type, summary, highlights, category, category_confidence, importance_score, entities, generated_at)
                      VALUES (?, NULL, 'group', ?, ?, ?, ?, ?, ?, ?)"
                 )
-                .bind(&topic_id)
+                .bind(&final_topic_id)
                 .bind(&group.summary)
                 .bind(serde_json::to_string(&group.highlights).unwrap_or_default())
                 .bind(&group.category)
@@ -628,7 +642,7 @@ mod tests {
             summary: row.summary.clone(),
             category: row.category.clone().unwrap_or_else(|| "other".to_string()),
             importance_score: row.importance_score.unwrap_or(0.5),
-            message_count: message_ids.len() as i32,
+            message_count: message_ids.len().try_into().unwrap_or(i32::MAX),
             people,
         };
 
@@ -737,22 +751,11 @@ mod tests {
 
     #[test]
     fn test_message_ids_merge_logic() {
-        // Simulate the merging logic used in process_daily_batch
-        let existing_message_ids: Vec<String> = vec![
-            "msg1".to_string(),
-            "msg2".to_string(),
-            "msg3".to_string(),
-        ];
+        let existing: Vec<String> = vec!["msg1".into(), "msg2".into(), "msg3".into()];
+        let new: Vec<String> = vec!["msg3".into(), "msg4".into(), "msg5".into()];
         
-        let new_message_ids: Vec<String> = vec![
-            "msg3".to_string(), // Duplicate - should not be added
-            "msg4".to_string(), // New - should be added
-            "msg5".to_string(), // New - should be added
-        ];
-        
-        // Replicate the merge logic from process_daily_batch
-        let mut merged = existing_message_ids.clone();
-        for msg_id in &new_message_ids {
+        let mut merged = existing.clone();
+        for msg_id in &new {
             if !merged.contains(msg_id) {
                 merged.push(msg_id.clone());
             }
@@ -774,13 +777,7 @@ mod tests {
             }
         }
         
-        // Existing messages stay at the front in original order
-        assert_eq!(merged[0], "a");
-        assert_eq!(merged[1], "b");
-        assert_eq!(merged[2], "c");
-        // New messages appended at the end
-        assert_eq!(merged[3], "d");
-        assert_eq!(merged[4], "e");
+        assert_eq!(merged, vec!["a", "b", "c", "d", "e"]);
     }
 
     #[test]
@@ -827,13 +824,9 @@ mod tests {
             }
         }
         
-        // No new IDs added since all are duplicates
-        assert_eq!(merged.len(), 2);
         assert_eq!(merged, vec!["msg1", "msg2"]);
     }
 
-    /// Tests that message_ids are cached for ALL rows, even those skipped
-    /// due to missing "topic" field. This prevents data loss when merging.
     #[test]
     fn test_message_ids_cached_for_rows_with_missing_topic() {
         let rows = vec![
@@ -860,7 +853,6 @@ mod tests {
             },
         ];
         
-        // Single-loop approach: cache message_ids and build topics in one pass
         let mut existing_message_ids_map: std::collections::HashMap<String, Vec<String>> = 
             std::collections::HashMap::new();
         let mut existing_topics: Vec<ExistingTopic> = Vec::new();
@@ -873,7 +865,7 @@ mod tests {
             let message_ids: Vec<String> = entities.get("message_ids")
                 .and_then(|v| serde_json::from_value(v.clone()).ok())
                 .unwrap_or_default();
-            let message_count = message_ids.len() as i32;
+            let message_count: i32 = message_ids.len().try_into().unwrap_or(i32::MAX);
             existing_message_ids_map.insert(row.id.clone(), message_ids);
             
             let Some(topic) = entities.get("topic").and_then(|v| v.as_str()) else {
@@ -898,11 +890,8 @@ mod tests {
             });
         }
         
-        // Only valid row included in topics
         assert_eq!(existing_topics.len(), 1);
         assert_eq!(existing_topics[0].topic_id, "topic_valid");
-        
-        // ALL rows have message_ids cached (key invariant)
         assert_eq!(existing_message_ids_map.len(), 3);
         assert_eq!(
             existing_message_ids_map.get("topic_valid"),
