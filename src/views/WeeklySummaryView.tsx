@@ -29,7 +29,9 @@ export function WeeklySummaryView() {
 
   const weekStartStr = format(weekStart, 'yyyy-MM-dd')
   const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 })
-  const { data, isLoading, error } = useWeeklyDigest(weekStartStr)
+  // Send timezone offset in minutes (e.g., PST is -480, EST is -300)
+  const timezoneOffset = weekStart.getTimezoneOffset()
+  const { data, isLoading, error } = useWeeklyDigest(weekStartStr, timezoneOffset)
 
   // Filter items by category
   const filteredItems = useMemo(() => {
@@ -38,14 +40,20 @@ export function WeeklySummaryView() {
     return items.filter(item => item.category.toLowerCase() === filter)
   }, [data?.items, filter])
 
-  // Group filtered items by day (newest first)
+  // Group filtered items by day (newest first), with overview items at top of each day
   const dayGroups = useMemo((): DayGroup[] => {
     const days = eachDayOfInterval({ start: weekStart, end: weekEnd }).reverse()
     return days
-      .map(date => ({
-        date,
-        items: filteredItems.filter(item => isSameDay(new Date(item.createdAt), date)),
-      }))
+      .map(date => {
+        const dayItems = filteredItems.filter(item => isSameDay(new Date(item.createdAt), date))
+        // Sort items: overview first, then by importance score descending
+        dayItems.sort((a, b) => {
+          if (a.category === 'overview' && b.category !== 'overview') return -1
+          if (a.category !== 'overview' && b.category === 'overview') return 1
+          return b.importanceScore - a.importanceScore
+        })
+        return { date, items: dayItems }
+      })
       .filter(group => group.items.length > 0)
   }, [filteredItems, weekStart, weekEnd])
 

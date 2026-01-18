@@ -14,7 +14,9 @@ export function DailyDigestView() {
   const [filter, setFilter] = useState<string>('all')
 
   const dateStr = format(date, 'yyyy-MM-dd')
-  const { data, isLoading, error } = useDailyDigest(dateStr)
+  // Send timezone offset in minutes (e.g., PST is -480, EST is -300)
+  const timezoneOffset = date.getTimezoneOffset()
+  const { data, isLoading, error } = useDailyDigest(dateStr, timezoneOffset)
 
   const filteredItems = data?.items.filter(
     item => filter === 'all' || item.category.toLowerCase() === filter

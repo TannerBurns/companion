@@ -4,7 +4,7 @@ use chrono::Utc;
 use serde::Serialize;
 use crate::db::Database;
 use crate::crypto::CryptoService;
-use super::gemini::GeminiClient;
+use super::gemini::{GeminiClient, ServiceAccountCredentials};
 use super::prompts::{self, SummaryResult, GroupedAnalysisResult, ExistingTopic};
 
 #[derive(sqlx::FromRow)]
@@ -52,9 +52,25 @@ pub struct ProcessingPipeline {
 }
 
 impl ProcessingPipeline {
-    pub fn new(api_key: String, db: Arc<Database>, crypto: Arc<CryptoService>) -> Self {
+    /// Create a new ProcessingPipeline.
+    /// The `api_key_or_credentials` parameter can be:
+    /// - A plain API key string
+    /// - A string prefixed with "SERVICE_ACCOUNT:" followed by JSON credentials
+    pub fn new(api_key_or_credentials: String, db: Arc<Database>, crypto: Arc<CryptoService>) -> Self {
+        let gemini = if let Some(json_str) = api_key_or_credentials.strip_prefix("SERVICE_ACCOUNT:") {
+            match serde_json::from_str::<ServiceAccountCredentials>(json_str) {
+                Ok(credentials) => GeminiClient::new_with_service_account(credentials),
+                Err(e) => {
+                    tracing::error!("Failed to parse service account credentials: {}", e);
+                    GeminiClient::new(api_key_or_credentials)
+                }
+            }
+        } else {
+            GeminiClient::new(api_key_or_credentials)
+        };
+        
         Self {
-            gemini: GeminiClient::new(api_key),
+            gemini,
             db,
             crypto,
         }
@@ -535,19 +551,41 @@ impl ProcessingPipeline {
             .map_err(|e| e.to_string())?;
 
         let now = chrono::Utc::now().timestamp_millis();
-        let digest_id = uuid::Uuid::new_v4().to_string();
+        let digest_id = format!("daily_{}", date);
         
-        sqlx::query(
-            "INSERT INTO ai_summaries (id, summary_type, summary, highlights, generated_at)
-             VALUES (?, 'daily', ?, ?, ?)"
+        // Check if daily summary already exists for this date
+        let existing: Option<(String,)> = sqlx::query_as(
+            "SELECT id FROM ai_summaries WHERE id = ?"
         )
         .bind(&digest_id)
-        .bind(&digest.summary)
-        .bind(serde_json::to_string(&digest.key_themes).unwrap())
-        .bind(now)
-        .execute(self.db.pool())
+        .fetch_optional(self.db.pool())
         .await
         .map_err(|e| e.to_string())?;
+        
+        if existing.is_some() {
+            sqlx::query(
+                "UPDATE ai_summaries SET summary = ?, highlights = ?, generated_at = ? WHERE id = ?"
+            )
+            .bind(&digest.summary)
+            .bind(serde_json::to_string(&digest.key_themes).unwrap())
+            .bind(now)
+            .bind(&digest_id)
+            .execute(self.db.pool())
+            .await
+            .map_err(|e| e.to_string())?;
+        } else {
+            sqlx::query(
+                "INSERT INTO ai_summaries (id, summary_type, summary, highlights, generated_at)
+                 VALUES (?, 'daily', ?, ?, ?)"
+            )
+            .bind(&digest_id)
+            .bind(&digest.summary)
+            .bind(serde_json::to_string(&digest.key_themes).unwrap())
+            .bind(now)
+            .execute(self.db.pool())
+            .await
+            .map_err(|e| e.to_string())?;
+        }
 
         Ok(digest.summary)
     }

@@ -95,11 +95,11 @@ export interface SlackTokens {
 }
 
 export const api = {
-  getDailyDigest: (date?: string) =>
-    invoke<DigestResponse>('get_daily_digest', { date }),
+  getDailyDigest: (date?: string, timezoneOffset?: number) =>
+    invoke<DigestResponse>('get_daily_digest', { date, timezoneOffset }),
 
-  getWeeklyDigest: (weekStart?: string) =>
-    invoke<DigestResponse>('get_weekly_digest', { weekStart }),
+  getWeeklyDigest: (weekStart?: string, timezoneOffset?: number) =>
+    invoke<DigestResponse>('get_weekly_digest', { weekStart, timezoneOffset }),
 
   startSync: (sources?: string[]) =>
     invoke<{ itemsSynced: number; channelsProcessed: number; errors: string[] }>('start_sync', { sources }),
@@ -144,4 +144,14 @@ export const api = {
 
   getSlackConnectionStatus: () =>
     invoke<SlackConnectionStatus>('get_slack_connection_status'),
+
+  // Gemini authentication
+  saveGeminiCredentials: (jsonContent: string, region?: string) =>
+    invoke<void>('save_gemini_credentials', { jsonContent, region }),
+
+  verifyGeminiConnection: () =>
+    invoke<void>('verify_gemini_connection'),
+
+  getGeminiAuthType: () =>
+    invoke<'api_key' | 'service_account' | 'none'>('get_gemini_auth_type'),
 }
