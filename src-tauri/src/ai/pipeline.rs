@@ -62,7 +62,9 @@ impl ProcessingPipeline {
                 Ok(credentials) => GeminiClient::new_with_service_account(credentials),
                 Err(e) => {
                     tracing::error!("Failed to parse service account credentials: {}", e);
-                    GeminiClient::new(api_key_or_credentials)
+                    // Don't fall back to API key mode with the prefixed string - it would cause
+                    // confusing auth errors. Use empty string so failures are clearly about missing credentials.
+                    GeminiClient::new(String::new())
                 }
             }
         } else {
