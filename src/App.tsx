@@ -1,4 +1,6 @@
+import { useEffect } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { listen } from '@tauri-apps/api/event'
 import { ThemeProvider } from './lib/ThemeProvider'
 import { useAppStore } from './store'
 import { Layout, OfflineIndicator } from './components'
@@ -28,10 +30,41 @@ function MainContent() {
   }
 }
 
+function TrayEventHandler() {
+  const { setView } = useAppStore()
+
+  useEffect(() => {
+    let unlistenFn: (() => void) | undefined
+    let mounted = true
+
+    listen('tray:open-settings', () => {
+      setView('settings')
+    }).then((fn) => {
+      if (mounted) {
+        unlistenFn = fn
+      } else {
+        // Component unmounted before promise resolved, clean up immediately
+        fn()
+      }
+    }).catch((err) => {
+      // Gracefully handle listener setup failure (e.g., running in browser without Tauri)
+      console.warn('Failed to set up tray event listener:', err)
+    })
+
+    return () => {
+      mounted = false
+      unlistenFn?.()
+    }
+  }, [setView])
+
+  return null
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
+        <TrayEventHandler />
         <Layout>
           <MainContent />
         </Layout>

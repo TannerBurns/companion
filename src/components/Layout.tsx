@@ -17,8 +17,8 @@ export function Header() {
     <header className="border-b border-border bg-card">
       <div className="flex items-center justify-between px-6 py-4">
         <div className="flex items-center gap-3">
-          <div className="h-8 w-8 rounded-lg bg-primary-500 flex items-center justify-center">
-            <span className="text-white font-bold text-sm">C</span>
+          <div className="h-8 w-8 rounded-lg bg-white border border-gray-200 dark:border-gray-700 flex items-center justify-center shadow-sm">
+            <span className="text-gray-700 dark:text-gray-300 font-bold text-sm">C</span>
           </div>
           <h1 className="text-xl font-semibold text-foreground">Companion</h1>
         </div>
