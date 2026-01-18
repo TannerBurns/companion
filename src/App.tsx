@@ -34,11 +34,23 @@ function TrayEventHandler() {
   const { setView } = useAppStore()
 
   useEffect(() => {
-    const unlisten = listen('tray:open-settings', () => {
+    let unlistenFn: (() => void) | undefined
+    let mounted = true
+
+    listen('tray:open-settings', () => {
       setView('settings')
+    }).then((fn) => {
+      if (mounted) {
+        unlistenFn = fn
+      } else {
+        // Component unmounted before promise resolved, clean up immediately
+        fn()
+      }
     })
+
     return () => {
-      unlisten.then((fn) => fn())
+      mounted = false
+      unlistenFn?.()
     }
   }, [setView])
 
