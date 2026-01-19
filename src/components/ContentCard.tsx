@@ -36,7 +36,7 @@ export function ContentCard({ item, onViewDetail }: ContentCardProps) {
         {item.title || item.summary.slice(0, 60)}
       </h3>
 
-      <p className="mt-1 text-sm text-muted-foreground line-clamp-2">
+      <p className={`mt-1 text-sm text-muted-foreground ${expanded ? '' : 'line-clamp-2'}`}>
         {item.summary}
       </p>
 
