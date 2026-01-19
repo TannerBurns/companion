@@ -43,7 +43,7 @@ export function useSync() {
     queryKey: ['sync-status'],
     queryFn: () => api.getSyncStatus(),
     refetchInterval: (query) => {
-      // Poll more frequently while syncing
+      // Poll more frequently while syncing, disable polling otherwise
       const data = query.state.data
       return data?.isSyncing ? 2000 : false
     },

@@ -1,8 +1,7 @@
 import { clsx } from 'clsx'
-import { Calendar, Settings, RefreshCw } from 'lucide-react'
+import { CalendarDays, CalendarRange, Settings, RefreshCw } from 'lucide-react'
 import { useAppStore } from '../store'
 import { useSync } from '../hooks/useDigest'
-import { NavItem } from './NavItem'
 import { PipelineStatus } from './PipelineStatus'
 
 export function Header() {
@@ -13,14 +12,50 @@ export function Header() {
     sync(undefined)
   }
 
+  const isDigestView = currentView === 'daily-digest' || currentView === 'weekly-summary'
+
   return (
     <header className="border-b border-border bg-card">
-      <div className="flex items-center justify-between px-6 py-4">
-        <div className="flex items-center gap-3">
-          <div className="h-8 w-8 rounded-lg bg-white border border-gray-200 dark:border-gray-700 flex items-center justify-center shadow-sm">
-            <span className="text-gray-700 dark:text-gray-300 font-bold text-sm">C</span>
+      <div className="flex items-center justify-between px-6 py-3">
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 rounded-lg bg-white border border-gray-200 dark:border-gray-700 flex items-center justify-center shadow-sm">
+              <span className="text-gray-700 dark:text-gray-300 font-bold text-sm">C</span>
+            </div>
+            <h1 className="text-xl font-semibold text-foreground">Companion</h1>
           </div>
-          <h1 className="text-xl font-semibold text-foreground">Companion</h1>
+          
+          {/* View Toggle */}
+          {isDigestView && (
+            <div className="flex items-center bg-muted rounded-lg p-1">
+              <button
+                onClick={() => setView('daily-digest')}
+                className={clsx(
+                  'flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
+                  currentView === 'daily-digest'
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
+                title="Daily Digest"
+              >
+                <CalendarDays className="h-4 w-4" />
+                <span>Daily</span>
+              </button>
+              <button
+                onClick={() => setView('weekly-summary')}
+                className={clsx(
+                  'flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
+                  currentView === 'weekly-summary'
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
+                title="Weekly Summary"
+              >
+                <CalendarRange className="h-4 w-4" />
+                <span>Weekly</span>
+              </button>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <PipelineStatus />
@@ -49,46 +84,17 @@ export function Header() {
   )
 }
 
-export function Sidebar() {
-  const { currentView, setView } = useAppStore()
-
-  return (
-    <aside className="w-64 border-r border-border bg-card min-h-[calc(100vh-65px)]">
-      <nav className="p-4 space-y-2">
-        <NavItem
-          icon={Calendar}
-          label="Daily Digest"
-          active={currentView === 'daily-digest'}
-          onClick={() => setView('daily-digest')}
-        />
-        <NavItem
-          icon={Calendar}
-          label="Weekly Summary"
-          active={currentView === 'weekly-summary'}
-          onClick={() => setView('weekly-summary')}
-        />
-      </nav>
-    </aside>
-  )
-}
-
 interface LayoutProps {
   children: React.ReactNode
 }
 
 export function Layout({ children }: LayoutProps) {
-  const { currentView } = useAppStore()
-  const showSidebar = currentView !== 'settings'
-
   return (
     <div className="min-h-screen bg-background">
       <Header />
-      <div className="flex">
-        {showSidebar && <Sidebar />}
-        <main className={clsx('flex-1 p-6', !showSidebar && 'max-w-none')}>
-          {children}
-        </main>
-      </div>
+      <main className="p-6">
+        {children}
+      </main>
     </div>
   )
 }

@@ -21,7 +21,9 @@ import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
 import { useTheme } from '../lib/useTheme'
 import { usePreferences } from '../hooks/usePreferences'
+import { useSync } from '../hooks/useDigest'
 import { api } from '../lib/api'
+import { formatRelativeTime } from '../lib/formatRelativeTime'
 import { GeminiSettings, GoogleIcon } from './GeminiSettings'
 
 interface SettingsNavItemProps {
@@ -363,6 +365,7 @@ function NotificationsSettings() {
 
 function SyncSettings() {
   const { preferences, save, isSaving } = usePreferences()
+  const { sync, isSyncing, status } = useSync()
 
   const handleIntervalChange = (value: number) => {
     save({ ...preferences, syncIntervalMinutes: value })
@@ -378,6 +381,37 @@ function SyncSettings() {
       </div>
 
       <div className="space-y-4">
+        <div className="p-4 bg-card border border-border rounded-lg">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <RefreshCw className={clsx('h-5 w-5 text-muted-foreground', isSyncing && 'animate-spin')} />
+              <div>
+                <h4 className="font-medium text-foreground">Sync Status</h4>
+                <p className="text-sm text-muted-foreground">
+                  {isSyncing ? (
+                    'Syncing now...'
+                  ) : (
+                    <>
+                      Last: {formatRelativeTime(status?.lastSyncAt, false)}
+                      {status?.nextSyncAt && (
+                        <> · Next: {formatRelativeTime(status.nextSyncAt, true)}</>
+                      )}
+                    </>
+                  )}
+                </p>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => sync()}
+              disabled={isSyncing}
+            >
+              {isSyncing ? 'Syncing...' : 'Sync Now'}
+            </Button>
+          </div>
+        </div>
+
         <div className="p-4 bg-card border border-border rounded-lg">
           <div className="flex items-center gap-3 mb-3">
             <Clock className="h-5 w-5 text-muted-foreground" />

@@ -6,7 +6,7 @@ use companion::crypto::CryptoService;
 use companion::notifications::NotificationService;
 use companion::analytics::AnalyticsService;
 use companion::pipeline::PipelineManager;
-use companion::sync::SyncQueue;
+use companion::sync::{SyncQueue, BackgroundSyncService};
 use companion::tray;
 use companion::AppState;
 use companion::commands;
@@ -18,7 +18,10 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 fn main() {
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer())
-        .with(tracing_subscriber::EnvFilter::from_default_env())
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("companion=info"))
+        )
         .init();
 
     tauri::Builder::default()
@@ -35,6 +38,7 @@ fn main() {
 
                 // Use a single shared database instance to avoid SQLite concurrency issues
                 let db_arc = Arc::new(db);
+                let crypto_arc = Arc::new(crypto.clone());
                 let notifications = NotificationService::new(app_handle.clone());
                 let analytics = AnalyticsService::new(db_arc.clone());
 
@@ -43,6 +47,22 @@ fn main() {
                 let pipeline_arc = Arc::new(Mutex::new(pipeline));
 
                 let sync_queue = SyncQueue::new();
+                let sync_lock = Arc::new(tokio::sync::Mutex::new(()));
+
+                let sync_interval = load_sync_interval(db_arc.clone()).await;
+                tracing::info!("Loaded sync interval: {} minutes", sync_interval);
+
+                let background_sync = BackgroundSyncService::new(
+                    app_handle.clone(),
+                    db_arc.clone(),
+                    crypto_arc.clone(),
+                    pipeline_arc.clone(),
+                    sync_lock.clone(),
+                    sync_interval,
+                );
+                let background_sync_arc = Arc::new(background_sync);
+                let is_syncing = background_sync_arc.is_syncing_flag();
+                let next_sync_at = background_sync_arc.next_sync_at_flag();
 
                 app.manage(Arc::new(Mutex::new(AppState {
                     db: db_arc.clone(),
@@ -51,7 +71,10 @@ fn main() {
                     analytics: Some(analytics),
                     pipeline: pipeline_arc.clone(),
                     sync_queue,
-                    sync_lock: Arc::new(tokio::sync::Mutex::new(())),
+                    sync_lock,
+                    background_sync: Some(background_sync_arc.clone()),
+                    is_syncing,
+                    next_sync_at,
                 })));
 
                 if let Err(e) = tray::init_tray(&app_handle) {
@@ -59,6 +82,12 @@ fn main() {
                 }
 
                 tray::spawn_tray_updater(app_handle.clone(), pipeline_arc);
+
+                let bg_sync = background_sync_arc.clone();
+                tauri::async_runtime::spawn(async move {
+                    bg_sync.run_startup_sync_if_needed().await;
+                    bg_sync.start();
+                });
             });
 
             Ok(())
@@ -91,4 +120,25 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+async fn load_sync_interval(db: Arc<Database>) -> u64 {
+    let result: Option<(String,)> = sqlx::query_as(
+        "SELECT value FROM preferences WHERE key = 'user_preferences'"
+    )
+    .fetch_optional(db.pool())
+    .await
+    .ok()
+    .flatten();
+
+    if let Some((json,)) = result {
+        if let Ok(prefs) = serde_json::from_str::<serde_json::Value>(&json) {
+            // Preferences are serialized with camelCase
+            if let Some(interval) = prefs.get("syncIntervalMinutes").and_then(|v| v.as_i64()) {
+                return interval.max(1) as u64;
+            }
+        }
+    }
+
+    15
 }
