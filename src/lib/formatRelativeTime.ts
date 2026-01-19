@@ -21,7 +21,7 @@ export function formatRelativeTime(
   const diffHours = Math.floor(diffMins / 60)
   if (diffHours < 24) return `${diffHours} hour${diffHours === 1 ? '' : 's'}${isFuture ? '' : ' ago'}`
   
-  return date.toLocaleDateString(undefined, { 
+  return date.toLocaleString(undefined, { 
     month: 'short', 
     day: 'numeric',
     hour: 'numeric',
