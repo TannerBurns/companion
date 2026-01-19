@@ -25,13 +25,13 @@ impl TrayCache {
     
     fn needs_update(&self, state: &PipelineState, tooltip: &str) -> bool {
         self.is_busy != state.is_busy 
-            || self.task_count != state.recent_history.len()
+            || self.task_count != state.active_tasks.len()
             || self.tooltip != tooltip
     }
     
     fn update(&mut self, state: &PipelineState, tooltip: &str) {
         self.is_busy = state.is_busy;
-        self.task_count = state.recent_history.len();
+        self.task_count = state.active_tasks.len();
         self.tooltip = tooltip.to_string();
     }
 }
@@ -186,25 +186,25 @@ pub fn spawn_tray_updater(app_handle: AppHandle, pipeline: Arc<Mutex<PipelineMan
 mod tests {
     use super::*;
 
-    fn make_state(is_busy: bool, history_len: usize) -> PipelineState {
+    fn make_state(is_busy: bool, active_task_count: usize) -> PipelineState {
         use crate::pipeline::{PipelineTask, PipelineTaskType, TaskStatus};
         
-        let history: Vec<PipelineTask> = (0..history_len)
+        let active: Vec<PipelineTask> = (0..active_task_count)
             .map(|i| PipelineTask {
                 id: format!("task-{}", i),
                 task_type: PipelineTaskType::SyncSlack,
-                status: TaskStatus::Completed,
+                status: TaskStatus::Running,
                 message: format!("Task {}", i),
                 progress: None,
                 started_at: 0,
-                completed_at: Some(0),
+                completed_at: None,
                 error: None,
             })
             .collect();
         
         PipelineState {
-            active_tasks: vec![],
-            recent_history: history,
+            active_tasks: active,
+            recent_history: vec![],
             is_busy,
         }
     }
@@ -270,7 +270,7 @@ mod tests {
     }
 
     #[test]
-    fn test_tray_cache_detects_history_growth() {
+    fn test_tray_cache_detects_active_task_change() {
         let mut cache = TrayCache::new();
         let state = make_state(false, 2);
         cache.update(&state, "Companion");
