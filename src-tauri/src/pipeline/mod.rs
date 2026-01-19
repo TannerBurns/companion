@@ -180,12 +180,12 @@ impl PipelineManager {
     pub async fn get_status_message(&self) -> String {
         let state = self.state.read().await;
         if state.active_tasks.is_empty() {
-            "Companion - Idle".to_string()
+            "Companion".to_string()
         } else if state.active_tasks.len() == 1 {
             let task = &state.active_tasks[0];
-            format!("Companion - {}", task.message)
+            format!("⟳ {}", task.message)
         } else {
-            format!("Companion - {} tasks running", state.active_tasks.len())
+            format!("⟳ {} tasks running", state.active_tasks.len())
         }
     }
 
@@ -259,7 +259,7 @@ mod tests {
     async fn test_status_message_idle() {
         let manager = PipelineManager::new();
         let msg = manager.get_status_message().await;
-        assert_eq!(msg, "Companion - Idle");
+        assert_eq!(msg, "Companion");
     }
 
     #[tokio::test]
@@ -270,7 +270,7 @@ mod tests {
             .await;
 
         let msg = manager.get_status_message().await;
-        assert_eq!(msg, "Companion - Processing items");
+        assert_eq!(msg, "⟳ Processing items");
     }
 
     #[tokio::test]
@@ -284,7 +284,7 @@ mod tests {
             .await;
 
         let msg = manager.get_status_message().await;
-        assert_eq!(msg, "Companion - 2 tasks running");
+        assert_eq!(msg, "⟳ 2 tasks running");
     }
 
     #[test]

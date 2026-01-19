@@ -86,6 +86,7 @@ pub struct CategorySummary {
 pub struct SyncStatus {
     pub is_syncing: bool,
     pub last_sync_at: Option<i64>,
+    pub next_sync_at: Option<i64>,
     pub sources: Vec<SourceStatus>,
 }
 
@@ -383,13 +384,14 @@ pub async fn start_sync(
 ) -> Result<SyncResult, String> {
     tracing::info!("Sync requested for sources: {:?}, timezone_offset: {:?}", sources, timezone_offset);
     
-    let (db, crypto, pipeline, sync_lock) = {
+    let (db, crypto, pipeline, sync_lock, is_syncing) = {
         let state = state.lock().await;
         (
             state.db.clone(),
             std::sync::Arc::new(state.crypto.clone()),
             state.pipeline.clone(),
             state.sync_lock.clone(),
+            state.is_syncing.clone(),
         )
     };
     
@@ -404,6 +406,8 @@ pub async fn start_sync(
             });
         }
     };
+    
+    is_syncing.store(true, std::sync::atomic::Ordering::SeqCst);
     
     let mut total_items = 0;
     let mut channels_processed = 0;
@@ -486,6 +490,19 @@ pub async fn start_sync(
         }
     }
     
+    let now = chrono::Utc::now().timestamp_millis();
+    if let Err(e) = sqlx::query(
+        "INSERT OR REPLACE INTO preferences (key, value) VALUES ('last_sync_at', ?)"
+    )
+    .bind(now.to_string())
+    .execute(db.pool())
+    .await
+    {
+        tracing::error!("Failed to save last sync timestamp: {}", e);
+    }
+    
+    is_syncing.store(false, std::sync::atomic::Ordering::SeqCst);
+    
     tracing::info!("Sync completed: items={}, errors={:?}", total_items, errors);
     Ok(SyncResult {
         items_synced: total_items,
@@ -504,11 +521,24 @@ pub struct SyncResult {
 
 #[tauri::command]
 pub async fn get_sync_status(
-    _state: State<'_, Arc<Mutex<AppState>>>,
+    state: State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<SyncStatus, String> {
+    let (db, is_syncing, next_sync_at) = {
+        let state = state.lock().await;
+        (state.db.clone(), state.is_syncing.clone(), state.next_sync_at.clone())
+    };
+    
+    let is_currently_syncing = is_syncing.load(std::sync::atomic::Ordering::SeqCst);
+    let last_sync_at = crate::sync::get_last_sync_at(db).await;
+    let next_sync = {
+        let val = next_sync_at.load(std::sync::atomic::Ordering::SeqCst);
+        if val > 0 { Some(val) } else { None }
+    };
+    
     Ok(SyncStatus {
-        is_syncing: false,
-        last_sync_at: None,
+        is_syncing: is_currently_syncing,
+        last_sync_at,
+        next_sync_at: next_sync,
         sources: vec![],
     })
 }
@@ -757,14 +787,22 @@ pub async fn save_preferences(
     state: State<'_, Arc<Mutex<AppState>>>,
     preferences: Preferences,
 ) -> Result<(), String> {
-    let state = state.lock().await;
+    let (db, background_sync) = {
+        let state = state.lock().await;
+        (state.db.clone(), state.background_sync.clone())
+    };
+    
     let prefs_json = serde_json::to_string(&preferences).map_err(|e| e.to_string())?;
     
     sqlx::query("INSERT OR REPLACE INTO preferences (key, value) VALUES ('user_preferences', ?)")
         .bind(&prefs_json)
-        .execute(state.db.pool())
+        .execute(db.pool())
         .await
         .map_err(|e| e.to_string())?;
+    
+    if let Some(bg_sync) = background_sync {
+        bg_sync.set_interval(preferences.sync_interval_minutes as u64).await;
+    }
     
     Ok(())
 }

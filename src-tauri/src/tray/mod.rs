@@ -8,6 +8,34 @@ use tauri::{
 };
 use tokio::sync::Mutex;
 
+struct TrayCache {
+    is_busy: bool,
+    task_count: usize,
+    tooltip: String,
+}
+
+impl TrayCache {
+    fn new() -> Self {
+        Self {
+            is_busy: false,
+            task_count: 0,
+            tooltip: String::new(),
+        }
+    }
+    
+    fn needs_update(&self, state: &PipelineState, tooltip: &str) -> bool {
+        self.is_busy != state.is_busy 
+            || self.task_count != state.recent_history.len()
+            || self.tooltip != tooltip
+    }
+    
+    fn update(&mut self, state: &PipelineState, tooltip: &str) {
+        self.is_busy = state.is_busy;
+        self.task_count = state.recent_history.len();
+        self.tooltip = tooltip.to_string();
+    }
+}
+
 const TRAY_ICON: &[u8] = include_bytes!("../../icons/tray-icon.png");
 
 pub fn init_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
@@ -34,7 +62,10 @@ fn build_tray_menu(
 ) -> Result<Menu<tauri::Wry>, Box<dyn std::error::Error>> {
     let show_window = MenuItem::with_id(app, "show", "Show Companion", true, None::<&str>)?;
     let open_settings = MenuItem::with_id(app, "settings", "Open Settings", true, None::<&str>)?;
-    let sync_now = MenuItem::with_id(app, "sync", "Sync Now", true, None::<&str>)?;
+    
+    let is_syncing = pipeline_state.map(|s| s.is_busy).unwrap_or(false);
+    let sync_label = if is_syncing { "⟳ Syncing..." } else { "Sync Now" };
+    let sync_now = MenuItem::with_id(app, "sync", sync_label, !is_syncing, None::<&str>)?;
     let separator1 = PredefinedMenuItem::separator(app)?;
     let activity_submenu = build_activity_submenu(app, pipeline_state)?;
     
@@ -123,26 +154,128 @@ fn handle_menu_event(app: &AppHandle, event_id: &str) {
     }
 }
 
-pub async fn update_tray(app: &AppHandle, pipeline: &Arc<Mutex<PipelineManager>>) {
-    let pipeline = pipeline.lock().await;
-    let message = pipeline.get_status_message().await;
-    let state = pipeline.get_state().await;
-    drop(pipeline); // Release lock before menu operations
-    
-    if let Some(tray) = app.tray_by_id("main") {
-        let _ = tray.set_tooltip(Some(&message));
-        if let Ok(menu) = build_tray_menu(app, Some(&state)) {
-            let _ = tray.set_menu(Some(menu));
-        }
-    }
-}
-
 pub fn spawn_tray_updater(app_handle: AppHandle, pipeline: Arc<Mutex<PipelineManager>>) {
     tauri::async_runtime::spawn(async move {
+        let mut cache = TrayCache::new();
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(2));
+        
         loop {
             interval.tick().await;
-            update_tray(&app_handle, &pipeline).await;
+            
+            let pipeline = pipeline.lock().await;
+            let message = pipeline.get_status_message().await;
+            let state = pipeline.get_state().await;
+            drop(pipeline);
+            
+            if let Some(tray) = app_handle.tray_by_id("main") {
+                if cache.needs_update(&state, &message) {
+                    tracing::debug!("Tray update: is_busy={}, tasks={}, message={}", 
+                        state.is_busy, state.active_tasks.len(), message);
+                    cache.update(&state, &message);
+                    let _ = tray.set_tooltip(Some(&message));
+                    if let Ok(menu) = build_tray_menu(&app_handle, Some(&state)) {
+                        let _ = tray.set_menu(Some(menu));
+                    }
+                }
+            }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_state(is_busy: bool, history_len: usize) -> PipelineState {
+        use crate::pipeline::{PipelineTask, PipelineTaskType, TaskStatus};
+        
+        let history: Vec<PipelineTask> = (0..history_len)
+            .map(|i| PipelineTask {
+                id: format!("task-{}", i),
+                task_type: PipelineTaskType::SyncSlack,
+                status: TaskStatus::Completed,
+                message: format!("Task {}", i),
+                progress: None,
+                started_at: 0,
+                completed_at: Some(0),
+                error: None,
+            })
+            .collect();
+        
+        PipelineState {
+            active_tasks: vec![],
+            recent_history: history,
+            is_busy,
+        }
+    }
+
+    #[test]
+    fn test_tray_cache_new_defaults() {
+        let cache = TrayCache::new();
+        assert!(!cache.is_busy);
+        assert_eq!(cache.task_count, 0);
+        assert!(cache.tooltip.is_empty());
+    }
+
+    #[test]
+    fn test_tray_cache_needs_update_on_busy_change() {
+        let cache = TrayCache::new();
+        let state = make_state(true, 0);
+        assert!(cache.needs_update(&state, "Companion"));
+    }
+
+    #[test]
+    fn test_tray_cache_needs_update_on_task_count_change() {
+        let cache = TrayCache::new();
+        let state = make_state(false, 3);
+        assert!(cache.needs_update(&state, "Companion"));
+    }
+
+    #[test]
+    fn test_tray_cache_needs_update_on_tooltip_change() {
+        let cache = TrayCache::new();
+        let state = make_state(false, 0);
+        assert!(cache.needs_update(&state, "New tooltip"));
+    }
+
+    #[test]
+    fn test_tray_cache_no_update_when_unchanged() {
+        let mut cache = TrayCache::new();
+        let state = make_state(false, 0);
+        cache.update(&state, "Companion");
+        
+        let same_state = make_state(false, 0);
+        assert!(!cache.needs_update(&same_state, "Companion"));
+    }
+
+    #[test]
+    fn test_tray_cache_update_stores_values() {
+        let mut cache = TrayCache::new();
+        let state = make_state(true, 5);
+        cache.update(&state, "Syncing...");
+        
+        assert!(cache.is_busy);
+        assert_eq!(cache.task_count, 5);
+        assert_eq!(cache.tooltip, "Syncing...");
+    }
+
+    #[test]
+    fn test_tray_cache_detects_busy_to_idle_transition() {
+        let mut cache = TrayCache::new();
+        let busy_state = make_state(true, 2);
+        cache.update(&busy_state, "⟳ Syncing...");
+        
+        let idle_state = make_state(false, 3);
+        assert!(cache.needs_update(&idle_state, "Companion"));
+    }
+
+    #[test]
+    fn test_tray_cache_detects_history_growth() {
+        let mut cache = TrayCache::new();
+        let state = make_state(false, 2);
+        cache.update(&state, "Companion");
+        
+        let new_state = make_state(false, 4);
+        assert!(cache.needs_update(&new_state, "Companion"));
+    }
 }

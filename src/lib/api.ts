@@ -28,6 +28,7 @@ export interface DigestResponse {
 export interface SyncStatus {
   isSyncing: boolean
   lastSyncAt?: number
+  nextSyncAt?: number
   sources: SourceStatus[]
 }
 
