@@ -149,10 +149,10 @@ describe('ContentDetailModal', () => {
       expect(screen.getByRole('button', { name: /View in Confluence/i })).toBeInTheDocument()
     })
 
-    it('shows View in Source button for other sources', () => {
+    it('shows View in Jira button when source is jira', () => {
       const jiraItem = { ...mockItem, source: 'jira' as const }
       render(<ContentDetailModal item={jiraItem} onClose={mockOnClose} />)
-      expect(screen.getByRole('button', { name: /View in Source/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /View in Jira/i })).toBeInTheDocument()
     })
 
     it('does not show footer when sourceUrl is undefined', () => {

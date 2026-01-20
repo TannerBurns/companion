@@ -165,7 +165,7 @@ export function ContentDetailModal({ item, onClose }: ContentDetailModalProps) {
               onClick={() => window.open(item.sourceUrl, '_blank', 'noopener,noreferrer')}
             >
               <ExternalLink className="h-4 w-4" />
-              View in {item.source === 'slack' ? 'Slack' : item.source === 'confluence' ? 'Confluence' : 'Source'}
+              View in {item.source === 'slack' ? 'Slack' : item.source === 'confluence' ? 'Confluence' : item.source === 'jira' ? 'Jira' : 'Source'}
             </Button>
           </div>
         )}

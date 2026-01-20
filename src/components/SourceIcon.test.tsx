@@ -22,6 +22,12 @@ describe('SourceIcon', () => {
       const svg = container.querySelector('svg')
       expect(svg).toBeInTheDocument()
     })
+
+    it('renders Sparkles icon for ai', () => {
+      const { container } = render(<SourceIcon source="ai" />)
+      const svg = container.querySelector('svg')
+      expect(svg).toBeInTheDocument()
+    })
   })
 
   describe('className', () => {
