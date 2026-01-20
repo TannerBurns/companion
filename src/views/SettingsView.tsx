@@ -132,20 +132,13 @@ function SourcesSettings() {
       isConnecting: isConnecting,
     },
     {
-      id: 'jira',
-      icon: FileText,
-      name: 'Jira',
-      description: 'Sync issues and projects from Atlassian Jira',
-      connected: false,
-      isConnecting: false,
-    },
-    {
       id: 'confluence',
       icon: FileText,
       name: 'Confluence',
       description: 'Sync pages and spaces from Atlassian Confluence',
       connected: false,
       isConnecting: false,
+      comingSoon: true,
     },
   ]
 
@@ -172,29 +165,42 @@ function SourcesSettings() {
 
       <div className="space-y-3">
         {sources.map((source) => (
-          <div key={source.id}>
-            <SourceCard
-              icon={source.icon}
-              name={source.name}
-              description={source.description}
-              connected={source.connected}
-              isConnecting={source.isConnecting}
-              onConnect={() => handleConnect(source.id)}
-              onDisconnect={() => handleDisconnect(source.id)}
-            />
-            {/* Slack-specific configure channels button */}
+          <SourceCard
+            key={source.id}
+            icon={source.icon}
+            name={source.name}
+            description={source.description}
+            connected={source.connected}
+            isConnecting={source.isConnecting}
+            comingSoon={source.comingSoon}
+            onConnect={() => handleConnect(source.id)}
+            onDisconnect={() => handleDisconnect(source.id)}
+          >
+            {/* Slack-specific content */}
             {source.id === 'slack' && slack.connected && (
-              <div className="ml-13 mt-2 flex items-center gap-2">
-                <button
-                  onClick={() => setShowChannelSelector(true)}
-                  className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-900/20 rounded-lg transition-colors"
-                >
-                  <Settings className="h-4 w-4" />
-                  Configure Channels
-                </button>
+              <button
+                onClick={() => setShowChannelSelector(true)}
+                className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-900/20 rounded-lg transition-colors"
+              >
+                <Settings className="h-4 w-4" />
+                Configure Channels
+              </button>
+            )}
+            {source.id === 'slack' && !slack.connected && (
+              <div className="flex items-start gap-3 p-3 bg-muted/50 rounded-lg">
+                <Link2 className="h-5 w-5 text-muted-foreground mt-0.5" />
+                <div>
+                  <h4 className="text-sm font-medium text-foreground">
+                    How It Works
+                  </h4>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Create a Slack app for your workspace, install it, and paste the
+                    User OAuth Token. Your token is stored securely on your device.
+                  </p>
+                </div>
               </div>
             )}
-          </div>
+          </SourceCard>
         ))}
       </div>
 
@@ -204,21 +210,6 @@ function SourcesSettings() {
           {error}
         </div>
       )}
-
-      <div className="mt-6 p-4 bg-muted/50 rounded-lg">
-        <div className="flex items-start gap-3">
-          <Link2 className="h-5 w-5 text-muted-foreground mt-0.5" />
-          <div>
-            <h4 className="text-sm font-medium text-foreground">
-              How It Works
-            </h4>
-            <p className="text-sm text-muted-foreground mt-1">
-              Create a Slack app for your workspace, install it, and paste the
-              User OAuth Token. Your token is stored securely on your device.
-            </p>
-          </div>
-        </div>
-      </div>
 
       {/* Slack Token Setup Modal */}
       {showSlackSetup && (
@@ -314,12 +305,6 @@ function SourcesSettings() {
 }
 
 function NotificationsSettings() {
-  const { preferences, save, isSaving } = usePreferences()
-
-  const handleToggle = () => {
-    save({ ...preferences, notificationsEnabled: !preferences.notificationsEnabled })
-  }
-
   return (
     <div>
       <div className="mb-6">
@@ -330,32 +315,29 @@ function NotificationsSettings() {
       </div>
 
       <div className="space-y-4">
-        <div className="flex items-center justify-between p-4 bg-card border border-border rounded-lg">
+        <div className="flex items-center justify-between p-4 bg-card border border-border rounded-lg opacity-75">
           <div className="flex items-center gap-3">
             <Bell className="h-5 w-5 text-muted-foreground" />
             <div>
-              <h4 className="font-medium text-foreground">
-                Daily Digest Notification
-              </h4>
+              <div className="flex items-center gap-2">
+                <h4 className="font-medium text-foreground">
+                  Daily Digest Notification
+                </h4>
+                <span className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded-full">
+                  <Clock className="h-3 w-3" />
+                  Coming Soon
+                </span>
+              </div>
               <p className="text-sm text-muted-foreground">
                 Get notified when your daily digest is ready
               </p>
             </div>
           </div>
           <button
-            onClick={handleToggle}
-            disabled={isSaving}
-            className={clsx(
-              'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
-              preferences.notificationsEnabled ? 'bg-primary-500' : 'bg-gray-300 dark:bg-gray-600'
-            )}
+            disabled
+            className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors bg-gray-300 dark:bg-gray-600 cursor-not-allowed"
           >
-            <span
-              className={clsx(
-                'inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
-                preferences.notificationsEnabled ? 'translate-x-6' : 'translate-x-1'
-              )}
-            />
+            <span className="inline-block h-4 w-4 transform rounded-full bg-white translate-x-1" />
           </button>
         </div>
       </div>
@@ -438,7 +420,7 @@ function SyncSettings() {
         <div className="p-4 bg-card border border-border rounded-lg">
           <h4 className="font-medium text-foreground mb-3">Enabled Sources</h4>
           <div className="flex flex-wrap gap-3">
-            {['slack', 'jira', 'confluence'].map(source => (
+            {['slack', 'confluence'].map(source => (
               <label key={source} className="flex items-center gap-2">
                 <input
                   type="checkbox"

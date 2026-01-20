@@ -1,5 +1,5 @@
 import { clsx } from 'clsx'
-import { CheckCircle2, Loader2 } from 'lucide-react'
+import { CheckCircle2, Loader2, Clock } from 'lucide-react'
 
 interface SourceCardProps {
   icon: React.ComponentType<{ className?: string }>
@@ -7,8 +7,10 @@ interface SourceCardProps {
   description: string
   connected: boolean
   isConnecting?: boolean
+  comingSoon?: boolean
   onConnect: () => void
   onDisconnect: () => void
+  children?: React.ReactNode
 }
 
 export function SourceCard({
@@ -17,11 +19,16 @@ export function SourceCard({
   description,
   connected,
   isConnecting = false,
+  comingSoon = false,
   onConnect,
   onDisconnect,
+  children,
 }: SourceCardProps) {
   return (
-    <div className="bg-card border border-border rounded-lg p-4">
+    <div className={clsx(
+      "bg-card border border-border rounded-lg p-4",
+      comingSoon && "opacity-75"
+    )}>
       <div className="flex items-start justify-between">
         <div className="flex items-start gap-3">
           <div
@@ -41,33 +48,48 @@ export function SourceCard({
                   Connected
                 </span>
               )}
+              {comingSoon && (
+                <span className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded-full">
+                  <Clock className="h-3 w-3" />
+                  Coming Soon
+                </span>
+              )}
             </div>
             <p className="text-sm text-muted-foreground mt-0.5">{description}</p>
           </div>
         </div>
-        <button
-          onClick={connected ? onDisconnect : onConnect}
-          disabled={isConnecting}
-          className={clsx(
-            'px-3 py-1.5 text-sm font-medium rounded-lg transition-colors inline-flex items-center gap-2',
-            connected
-              ? 'text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20'
-              : 'bg-primary-500 text-white hover:bg-primary-600',
-            isConnecting && 'opacity-50 cursor-not-allowed'
-          )}
-        >
-          {isConnecting ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Connecting...
-            </>
-          ) : connected ? (
-            'Disconnect'
-          ) : (
-            'Connect'
-          )}
-        </button>
+        {comingSoon ? (
+          <div className="px-3 py-1.5" />
+        ) : (
+          <button
+            onClick={connected ? onDisconnect : onConnect}
+            disabled={isConnecting}
+            className={clsx(
+              'px-3 py-1.5 text-sm font-medium rounded-lg transition-colors inline-flex items-center gap-2',
+              connected
+                ? 'text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20'
+                : 'bg-primary-500 text-white hover:bg-primary-600',
+              isConnecting && 'opacity-50 cursor-not-allowed'
+            )}
+          >
+            {isConnecting ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Connecting...
+              </>
+            ) : connected ? (
+              'Disconnect'
+            ) : (
+              'Connect'
+            )}
+          </button>
+        )}
       </div>
+      {children && (
+        <div className="mt-3 pt-3 border-t border-border">
+          {children}
+        </div>
+      )}
     </div>
   )
 }

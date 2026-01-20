@@ -10,7 +10,7 @@ import {
 } from 'date-fns'
 import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react'
 import { useWeeklyDigest } from '../hooks/useDigest'
-import { ContentCard } from '../components/ContentCard'
+import { ContentCard, ContentDetailModal } from '../components'
 import { Button } from '../components/ui/Button'
 import { useAppStore } from '../store'
 import type { DigestItem } from '../lib/api'
@@ -26,6 +26,7 @@ export function WeeklySummaryView() {
   const { setView } = useAppStore()
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }))
   const [filter, setFilter] = useState<string>('all')
+  const [selectedItem, setSelectedItem] = useState<DigestItem | null>(null)
 
   const weekStartStr = format(weekStart, 'yyyy-MM-dd')
   const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 })
@@ -177,7 +178,14 @@ export function WeeklySummaryView() {
                 {/* Items for this day */}
                 <div className="ml-12 space-y-4">
                   {items.map(item => (
-                    <ContentCard key={item.id} item={item} />
+                    <ContentCard
+                      key={item.id}
+                      item={item}
+                      onViewDetail={(id) => {
+                        const found = data?.items.find(i => i.id === id)
+                        if (found) setSelectedItem(found)
+                      }}
+                    />
                   ))}
                 </div>
               </div>
@@ -185,6 +193,12 @@ export function WeeklySummaryView() {
           </div>
         </div>
       )}
+
+      {/* Content Detail Modal */}
+      <ContentDetailModal
+        item={selectedItem}
+        onClose={() => setSelectedItem(null)}
+      />
     </div>
   )
 }
