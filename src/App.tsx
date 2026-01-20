@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { listen } from '@tauri-apps/api/event'
 import { ThemeProvider } from './lib/ThemeProvider'
 import { useAppStore } from './store'
+import { useSyncCompletedListener } from './hooks/useDigest'
 import { Layout, OfflineIndicator } from './components'
 import { DailyDigestView, WeeklySummaryView, SettingsView } from './views'
 
@@ -60,11 +61,17 @@ function TrayEventHandler() {
   return null
 }
 
+function SyncEventHandler() {
+  useSyncCompletedListener()
+  return null
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <TrayEventHandler />
+        <SyncEventHandler />
         <Layout>
           <MainContent />
         </Layout>
