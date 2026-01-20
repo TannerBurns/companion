@@ -1,4 +1,6 @@
+import { useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { listen } from '@tauri-apps/api/event'
 import { api } from '../lib/api'
 
 export function useDailyDigest(date?: string, timezoneOffset?: number) {
@@ -55,4 +57,31 @@ export function useSync() {
     status: statusQuery.data,
     error: syncMutation.error || statusQuery.error,
   }
+}
+
+export function useSyncCompletedListener() {
+  const queryClient = useQueryClient()
+
+  useEffect(() => {
+    let unlistenFn: (() => void) | undefined
+    let mounted = true
+
+    listen('sync:completed', () => {
+      queryClient.invalidateQueries({ queryKey: ['daily-digest'] })
+      queryClient.invalidateQueries({ queryKey: ['weekly-digest'] })
+    }).then((fn) => {
+      if (mounted) {
+        unlistenFn = fn
+      } else {
+        fn()
+      }
+    }).catch((err) => {
+      console.warn('Failed to set up sync:completed listener:', err)
+    })
+
+    return () => {
+      mounted = false
+      unlistenFn?.()
+    }
+  }, [queryClient])
 }

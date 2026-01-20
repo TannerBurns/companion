@@ -1,4 +1,4 @@
-export { useDailyDigest, useWeeklyDigest, useSync } from './useDigest'
+export { useDailyDigest, useWeeklyDigest, useSync, useSyncCompletedListener } from './useDigest'
 export { usePreferences, useApiKey } from './usePreferences'
 export { useConnectionStatus } from './useConnectionStatus'
 export { useNotifications } from './useNotifications'
