@@ -1,7 +1,7 @@
 //! Slack API client with OAuth support
 
 use reqwest::Client;
-use super::types::{SlackError, SlackTokens, SlackChannel, SlackMessage, OAuthResponse, SlackAuthInfo, SlackUser};
+use super::types::{SlackError, SlackTokens, SlackChannel, SlackMessage, ChannelHistoryResponse, OAuthResponse, SlackAuthInfo, SlackUser};
 use crate::sync::oauth::spawn_oauth_callback_listener;
 
 const SLACK_AUTHORIZE_URL: &str = "https://slack.com/oauth/v2/authorize";
@@ -9,6 +9,7 @@ const SLACK_TOKEN_URL: &str = "https://slack.com/api/oauth.v2.access";
 const SLACK_API_BASE: &str = "https://slack.com/api";
 const REDIRECT_PORT: u16 = 8374;
 
+#[derive(Clone)]
 pub struct SlackClient {
     http: Client,
     client_id: String,
@@ -246,13 +247,13 @@ impl SlackClient {
         Ok(all_channels)
     }
     
-    /// Fetch messages from a channel
     pub async fn get_channel_history(
         &self,
         channel_id: &str,
         oldest: Option<&str>,
+        cursor: Option<&str>,
         limit: usize,
-    ) -> Result<Vec<SlackMessage>, SlackError> {
+    ) -> Result<ChannelHistoryResponse, SlackError> {
         let token = self.access_token.as_ref()
             .ok_or_else(|| SlackError::OAuth("Not authenticated".into()))?;
         
@@ -264,6 +265,10 @@ impl SlackClient {
         
         if let Some(ts) = oldest {
             params.push(("oldest", ts));
+        }
+        
+        if let Some(c) = cursor {
+            params.push(("cursor", c));
         }
         
         let response = self.http
@@ -300,7 +305,17 @@ impl SlackClient {
             })
             .unwrap_or_default();
         
-        Ok(messages)
+        let has_more = json["has_more"].as_bool().unwrap_or(false);
+        let next_cursor = json["response_metadata"]["next_cursor"]
+            .as_str()
+            .filter(|c| !c.is_empty())
+            .map(String::from);
+        
+        Ok(ChannelHistoryResponse {
+            messages,
+            has_more,
+            next_cursor,
+        })
     }
     
     /// Fetch user info by ID
@@ -505,7 +520,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_channel_history_requires_auth() {
         let client = SlackClient::new("id".into(), "secret".into());
-        let result = client.get_channel_history("C123", None, 100).await;
+        let result = client.get_channel_history("C123", None, None, 100).await;
         
         assert!(result.is_err());
         let err = result.unwrap_err();

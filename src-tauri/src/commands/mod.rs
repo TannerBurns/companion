@@ -64,6 +64,46 @@ pub struct DigestItem {
     pub source_url: Option<String>,
     pub importance_score: f64,
     pub created_at: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub channels: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub people: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message_count: Option<i32>,
+}
+
+/// Parsed entity metadata from AI summaries
+struct ParsedEntities {
+    title: String,
+    channels: Option<Vec<String>>,
+    people: Option<Vec<String>>,
+    message_count: Option<i32>,
+}
+
+impl ParsedEntities {
+    fn from_json(entities: &Option<String>) -> Self {
+        let value: serde_json::Value = entities.as_ref()
+            .and_then(|e| serde_json::from_str(e).ok())
+            .unwrap_or(serde_json::json!({}));
+        
+        let title = value["topic"].as_str()
+            .map(String::from)
+            .unwrap_or_else(|| "Discussion".to_string());
+        
+        let channels: Option<Vec<String>> = value.get("channels")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .filter(|v: &Vec<String>| !v.is_empty());
+        
+        let people: Option<Vec<String>> = value.get("people")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .filter(|v: &Vec<String>| !v.is_empty());
+        
+        let message_count: Option<i32> = value.get("message_ids")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.len() as i32);
+        
+        Self { title, channels, people, message_count }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -162,19 +202,14 @@ pub async fn get_daily_digest(
     let mut category_counts: std::collections::HashMap<String, (i32, Vec<DigestItem>)> = std::collections::HashMap::new();
     
     for (id, summary, highlights_json, category, importance_score, entities, generated_at) in groups {
-        let title = entities.as_ref()
-            .and_then(|e| serde_json::from_str::<serde_json::Value>(e).ok())
-            .and_then(|v| v["topic"].as_str().map(String::from))
-            .unwrap_or_else(|| "Discussion".to_string());
-        
+        let parsed = ParsedEntities::from_json(&entities);
         let highlights: Option<Vec<String>> = highlights_json
             .and_then(|h| serde_json::from_str(&h).ok());
-        
         let cat = category.clone().unwrap_or_else(|| "other".to_string());
         
         let item = DigestItem {
             id: id.clone(),
-            title,
+            title: parsed.title,
             summary: summary.clone(),
             highlights,
             category: cat.clone(),
@@ -182,6 +217,9 @@ pub async fn get_daily_digest(
             source_url: None,
             importance_score: importance_score.unwrap_or(0.5),
             created_at: generated_at,
+            channels: parsed.channels,
+            people: parsed.people,
+            message_count: parsed.message_count,
         };
         
         let entry = category_counts.entry(cat.clone()).or_insert((0, vec![]));
@@ -218,6 +256,9 @@ pub async fn get_daily_digest(
             source_url: None,
             importance_score: 1.0,
             created_at: start_ts,
+            channels: None,
+            people: None,
+            message_count: None,
         });
     }
     
@@ -293,19 +334,14 @@ pub async fn get_weekly_digest(
     let mut category_counts: std::collections::HashMap<String, (i32, Vec<DigestItem>)> = std::collections::HashMap::new();
     
     for (id, summary, highlights_json, category, importance_score, entities, generated_at) in groups {
-        let title = entities.as_ref()
-            .and_then(|e| serde_json::from_str::<serde_json::Value>(e).ok())
-            .and_then(|v| v["topic"].as_str().map(String::from))
-            .unwrap_or_else(|| "Discussion".to_string());
-        
+        let parsed = ParsedEntities::from_json(&entities);
         let highlights: Option<Vec<String>> = highlights_json
             .and_then(|h| serde_json::from_str(&h).ok());
-        
         let cat = category.clone().unwrap_or_else(|| "other".to_string());
         
         let item = DigestItem {
             id: id.clone(),
-            title,
+            title: parsed.title,
             summary: summary.clone(),
             highlights,
             category: cat.clone(),
@@ -313,6 +349,9 @@ pub async fn get_weekly_digest(
             source_url: None,
             importance_score: importance_score.unwrap_or(0.5),
             created_at: generated_at,
+            channels: parsed.channels,
+            people: parsed.people,
+            message_count: parsed.message_count,
         };
         
         let entry = category_counts.entry(cat.clone()).or_insert((0, vec![]));
@@ -357,6 +396,9 @@ pub async fn get_weekly_digest(
             source_url: None,
             importance_score: 0.95, // High but below 1.0 so they sort after group items
             created_at: *generated_at,
+            channels: None,
+            people: None,
+            message_count: None,
         });
     }
     
@@ -918,4 +960,162 @@ pub async fn get_pipeline_status(
     let state = state.lock().await;
     let pipeline = state.pipeline.lock().await;
     Ok(pipeline.get_state().await)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DataStats {
+    pub content_items: i64,
+    pub ai_summaries: i64,
+    pub slack_users: i64,
+    pub sync_states: i64,
+}
+
+#[tauri::command]
+pub async fn get_data_stats(
+    state: State<'_, Arc<Mutex<AppState>>>,
+) -> Result<DataStats, String> {
+    let db = {
+        let state = state.lock().await;
+        state.db.clone()
+    };
+    
+    let content_items: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM content_items")
+        .fetch_one(db.pool())
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    let ai_summaries: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM ai_summaries")
+        .fetch_one(db.pool())
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    let slack_users: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM slack_users")
+        .fetch_one(db.pool())
+        .await
+        .unwrap_or((0,)); // Table might not exist yet
+    
+    let sync_states: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM sync_state")
+        .fetch_one(db.pool())
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    Ok(DataStats {
+        content_items: content_items.0,
+        ai_summaries: ai_summaries.0,
+        slack_users: slack_users.0,
+        sync_states: sync_states.0,
+    })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClearDataResult {
+    pub items_deleted: i64,
+}
+
+#[tauri::command]
+pub async fn clear_synced_data(
+    state: State<'_, Arc<Mutex<AppState>>>,
+) -> Result<ClearDataResult, String> {
+    let db = {
+        let state = state.lock().await;
+        state.db.clone()
+    };
+    
+    let content_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM content_items")
+        .fetch_one(db.pool())
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    let summary_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM ai_summaries")
+        .fetch_one(db.pool())
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    sqlx::query("DELETE FROM content_items")
+        .execute(db.pool())
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    sqlx::query("DELETE FROM ai_summaries")
+        .execute(db.pool())
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    sqlx::query("DELETE FROM sync_state")
+        .execute(db.pool())
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    sqlx::query("DELETE FROM slack_users")
+        .execute(db.pool())
+        .await
+        .ok();
+    
+    sqlx::query("DELETE FROM preferences WHERE key = 'last_sync_at'")
+        .execute(db.pool())
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    let total_deleted = content_count.0 + summary_count.0;
+    tracing::info!("Cleared synced data: {} content items, {} summaries", content_count.0, summary_count.0);
+    
+    Ok(ClearDataResult {
+        items_deleted: total_deleted,
+    })
+}
+
+#[tauri::command]
+pub async fn factory_reset(
+    state: State<'_, Arc<Mutex<AppState>>>,
+) -> Result<(), String> {
+    let db = {
+        let state = state.lock().await;
+        state.db.clone()
+    };
+    
+    sqlx::query("DELETE FROM content_items")
+        .execute(db.pool())
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    sqlx::query("DELETE FROM ai_summaries")
+        .execute(db.pool())
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    sqlx::query("DELETE FROM sync_state")
+        .execute(db.pool())
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    sqlx::query("DELETE FROM slack_users")
+        .execute(db.pool())
+        .await
+        .ok();
+    
+    sqlx::query("DELETE FROM credentials")
+        .execute(db.pool())
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    sqlx::query("DELETE FROM slack_selected_channels")
+        .execute(db.pool())
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    sqlx::query("DELETE FROM preferences")
+        .execute(db.pool())
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    sqlx::query("DELETE FROM analytics")
+        .execute(db.pool())
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    tracing::info!("Factory reset complete - all data cleared");
+    
+    Ok(())
 }

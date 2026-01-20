@@ -143,6 +143,14 @@ pub struct SlackMessage {
     pub reply_count: Option<i32>,
 }
 
+/// Response from the Slack conversations.history API with pagination info
+#[derive(Debug, Clone)]
+pub struct ChannelHistoryResponse {
+    pub messages: Vec<SlackMessage>,
+    pub has_more: bool,
+    pub next_cursor: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct SyncResult {
     pub source: String,
@@ -362,5 +370,65 @@ mod tests {
         let parsed: SlackUser = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.id, "U123");
         assert!(parsed.real_name.is_none());
+    }
+
+    #[test]
+    fn test_channel_history_response_with_messages() {
+        let response = ChannelHistoryResponse {
+            messages: vec![
+                SlackMessage {
+                    ts: "1234567890.123456".into(),
+                    user: Some("U123".into()),
+                    text: "Hello".into(),
+                    thread_ts: None,
+                    reply_count: None,
+                },
+                SlackMessage {
+                    ts: "1234567890.123457".into(),
+                    user: Some("U456".into()),
+                    text: "World".into(),
+                    thread_ts: None,
+                    reply_count: Some(3),
+                },
+            ],
+            has_more: true,
+            next_cursor: Some("cursor123".into()),
+        };
+
+        assert_eq!(response.messages.len(), 2);
+        assert!(response.has_more);
+        assert_eq!(response.next_cursor, Some("cursor123".into()));
+    }
+
+    #[test]
+    fn test_channel_history_response_empty() {
+        let response = ChannelHistoryResponse {
+            messages: vec![],
+            has_more: false,
+            next_cursor: None,
+        };
+
+        assert!(response.messages.is_empty());
+        assert!(!response.has_more);
+        assert!(response.next_cursor.is_none());
+    }
+
+    #[test]
+    fn test_channel_history_response_clone() {
+        let response = ChannelHistoryResponse {
+            messages: vec![SlackMessage {
+                ts: "123".into(),
+                user: None,
+                text: "Test".into(),
+                thread_ts: None,
+                reply_count: None,
+            }],
+            has_more: false,
+            next_cursor: None,
+        };
+
+        let cloned = response.clone();
+        assert_eq!(cloned.messages.len(), 1);
+        assert_eq!(cloned.messages[0].ts, "123");
     }
 }

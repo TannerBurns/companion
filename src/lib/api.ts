@@ -7,10 +7,13 @@ export interface DigestItem {
   highlights?: string[]
   category: string
   categoryConfidence?: number
-  source: 'slack' | 'jira' | 'confluence'
+  source: 'slack' | 'jira' | 'confluence' | 'ai'
   sourceUrl?: string
   importanceScore: number
   createdAt: number
+  channels?: string[]
+  people?: string[]
+  messageCount?: number
 }
 
 export interface CategorySummary {
@@ -155,4 +158,14 @@ export const api = {
 
   getGeminiAuthType: () =>
     invoke<'api_key' | 'service_account' | 'none'>('get_gemini_auth_type'),
+
+  // Data management
+  clearSyncedData: () =>
+    invoke<{ itemsDeleted: number }>('clear_synced_data'),
+
+  factoryReset: () =>
+    invoke<void>('factory_reset'),
+
+  getDataStats: () =>
+    invoke<{ contentItems: number; aiSummaries: number; slackUsers: number; syncStates: number }>('get_data_stats'),
 }

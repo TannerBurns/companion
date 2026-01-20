@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ExternalLink, ChevronDown, ChevronUp } from 'lucide-react'
+import { ExternalLink, ChevronDown, ChevronUp, Hash, Users, MessageSquare } from 'lucide-react'
 import { Card } from './ui/Card'
 import { CategoryBadge } from './CategoryBadge'
 import { SourceIcon } from './SourceIcon'
@@ -49,6 +49,52 @@ export function ContentCard({ item, onViewDetail }: ContentCardProps) {
             </li>
           ))}
         </ul>
+      )}
+
+      {/* Source Info - shown when expanded */}
+      {expanded && (item.channels?.length || item.people?.length || item.messageCount) && (
+        <div className="mt-4 pt-3 border-t border-border space-y-2">
+          {/* Channels */}
+          {item.channels && item.channels.length > 0 && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Hash className="h-3 w-3 flex-shrink-0" />
+              <span className="flex flex-wrap gap-1">
+                {item.channels.map((channel, index) => (
+                  <span key={index} className="text-foreground">
+                    {channel}{index < item.channels!.length - 1 ? ',' : ''}
+                  </span>
+                ))}
+              </span>
+            </div>
+          )}
+          
+          {/* People */}
+          {item.people && item.people.length > 0 && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Users className="h-3 w-3 flex-shrink-0" />
+              <span className="flex flex-wrap gap-1">
+                {item.people.slice(0, 5).map((person, index) => (
+                  <span key={index} className="text-foreground">
+                    {person}{index < Math.min(item.people!.length, 5) - 1 ? ',' : ''}
+                  </span>
+                ))}
+                {item.people.length > 5 && (
+                  <span className="text-muted-foreground">+{item.people.length - 5} more</span>
+                )}
+              </span>
+            </div>
+          )}
+          
+          {/* Message Count */}
+          {item.messageCount && item.messageCount > 0 && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <MessageSquare className="h-3 w-3 flex-shrink-0" />
+              <span>
+                <span className="text-foreground">{item.messageCount}</span> messages
+              </span>
+            </div>
+          )}
+        </div>
       )}
 
       <div className="mt-3 flex items-center justify-between">
