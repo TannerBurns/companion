@@ -2,9 +2,10 @@ import { useState } from 'react'
 import { format, subDays, addDays, isToday, isFuture } from 'date-fns'
 import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react'
 import { useDailyDigest } from '../hooks/useDigest'
-import { ContentCard } from '../components/ContentCard'
+import { ContentCard, ContentDetailModal } from '../components'
 import { Button } from '../components/ui/Button'
 import { useAppStore } from '../store'
+import type { DigestItem } from '../lib/api'
 
 const CATEGORIES = ['all', 'engineering', 'product', 'sales', 'marketing', 'research', 'other'] as const
 
@@ -12,6 +13,7 @@ export function DailyDigestView() {
   const { setView } = useAppStore()
   const [date, setDate] = useState(new Date())
   const [filter, setFilter] = useState<string>('all')
+  const [selectedItem, setSelectedItem] = useState<DigestItem | null>(null)
 
   const dateStr = format(date, 'yyyy-MM-dd')
   // Send timezone offset in minutes (e.g., PST is -480, EST is -300)
@@ -119,11 +121,23 @@ export function DailyDigestView() {
       ) : (
         <div className="grid gap-4">
           {filteredItems.map(item => (
-            <ContentCard key={item.id} item={item} />
+            <ContentCard
+              key={item.id}
+              item={item}
+              onViewDetail={(id) => {
+                const found = data?.items.find(i => i.id === id)
+                if (found) setSelectedItem(found)
+              }}
+            />
           ))}
         </div>
       )}
 
+      {/* Content Detail Modal */}
+      <ContentDetailModal
+        item={selectedItem}
+        onClose={() => setSelectedItem(null)}
+      />
     </div>
   )
 }
