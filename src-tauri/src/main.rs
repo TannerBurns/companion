@@ -117,6 +117,9 @@ fn main() {
             commands::save_gemini_credentials,
             commands::verify_gemini_connection,
             commands::get_gemini_auth_type,
+            commands::get_data_stats,
+            commands::clear_synced_data,
+            commands::factory_reset,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

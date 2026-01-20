@@ -1,14 +1,23 @@
 //! Slack synchronization service
 
 use std::sync::Arc;
-use chrono::Utc;
+use std::time::Duration;
+use tokio::sync::Semaphore;
+use tokio::time::sleep;
 use super::client::SlackClient;
-use super::types::{SlackError, SlackChannel, SlackMessage, SyncResult, SlackChannelSelection};
+use super::types::{SlackError, SlackChannel, SlackMessage, SlackUser, SyncResult, SlackChannelSelection};
 use crate::crypto::CryptoService;
 use crate::db::Database;
 
 type ChannelRow = (String, String, i32, i32, i32, String, Option<i32>, Option<String>, i32);
 
+const USER_CACHE_TTL_MS: i64 = 24 * 60 * 60 * 1000; // 24 hours
+const MAX_CONCURRENT_SYNCS: usize = 2;
+const API_CALL_DELAY_MS: u64 = 500;
+const MAX_RETRIES: u32 = 3;
+const RETRY_BASE_DELAY_MS: u64 = 2000;
+
+#[derive(Clone)]
 pub struct SlackSyncService {
     client: SlackClient,
     db: Arc<Database>,
@@ -20,10 +29,66 @@ impl SlackSyncService {
         Self { client, db, crypto }
     }
     
-    fn get_today_start_timestamp() -> f64 {
-        let today = Utc::now().date_naive();
-        let start_of_day = today.and_hms_opt(0, 0, 0).unwrap();
-        start_of_day.and_utc().timestamp() as f64
+    async fn get_sync_cursor(&self, channel_id: &str) -> Result<Option<String>, SlackError> {
+        let row: Option<(String,)> = sqlx::query_as(
+            "SELECT cursor FROM sync_state 
+             WHERE source = 'slack' AND resource_type = 'channel' AND resource_id = ?"
+        )
+        .bind(channel_id)
+        .fetch_optional(self.db.pool())
+        .await?;
+        
+        Ok(row.map(|r| r.0))
+    }
+    
+    async fn should_refresh_user_cache(&self) -> Result<bool, SlackError> {
+        let row: Option<(i64,)> = sqlx::query_as(
+            "SELECT MAX(updated_at) FROM slack_users"
+        )
+        .fetch_optional(self.db.pool())
+        .await?;
+        
+        let now = chrono::Utc::now().timestamp_millis();
+        match row {
+            Some((last_update,)) => Ok(now - last_update > USER_CACHE_TTL_MS),
+            None => Ok(true), // No users cached yet
+        }
+    }
+    
+    async fn store_users(&self, users: &[SlackUser], team_id: &str) -> Result<(), SlackError> {
+        let now = chrono::Utc::now().timestamp_millis();
+        
+        for user in users {
+            sqlx::query(
+                "INSERT INTO slack_users (user_id, team_id, username, real_name, display_name, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?)
+                 ON CONFLICT(user_id) DO UPDATE SET 
+                    username = excluded.username,
+                    real_name = excluded.real_name,
+                    display_name = excluded.display_name,
+                    updated_at = excluded.updated_at"
+            )
+            .bind(&user.id)
+            .bind(team_id)
+            .bind(&user.name)
+            .bind(&user.real_name)
+            .bind(&user.display_name)
+            .bind(now)
+            .execute(self.db.pool())
+            .await?;
+        }
+        
+        Ok(())
+    }
+    
+    async fn get_team_id(&self) -> Result<Option<String>, SlackError> {
+        let row: Option<(String,)> = sqlx::query_as(
+            "SELECT team_id FROM slack_selected_channels WHERE enabled = 1 LIMIT 1"
+        )
+        .fetch_optional(self.db.pool())
+        .await?;
+        
+        Ok(row.map(|r| r.0))
     }
     
     async fn get_enabled_channels(&self) -> Result<Vec<SlackChannelSelection>, SlackError> {
@@ -51,12 +116,10 @@ impl SlackSyncService {
         Ok(channels)
     }
     
-    /// Sync only selected and enabled channels
     pub async fn sync_all(&self) -> Result<SyncResult, SlackError> {
         let selected_channels = self.get_enabled_channels().await?;
         tracing::debug!("Found {} enabled channels to sync", selected_channels.len());
         
-        let mut total_items = 0;
         let mut errors = Vec::new();
         
         if selected_channels.is_empty() {
@@ -68,16 +131,52 @@ impl SlackSyncService {
             });
         }
         
-        let today_start = Self::get_today_start_timestamp();
+        if self.should_refresh_user_cache().await? {
+            if let Some(team_id) = self.get_team_id().await? {
+                tracing::info!("Refreshing Slack user cache");
+                match self.client.list_users().await {
+                    Ok(users) => {
+                        tracing::info!("Fetched {} users from Slack", users.len());
+                        if let Err(e) = self.store_users(&users, &team_id).await {
+                            tracing::error!("Failed to store users: {}", e);
+                            errors.push(format!("User cache: {}", e));
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to fetch users: {}", e);
+                        errors.push(format!("User fetch: {}", e));
+                    }
+                }
+            }
+        }
+        
+        let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_SYNCS));
+        let mut handles = Vec::new();
         
         for channel in selected_channels {
-            match self.sync_channel(&channel, today_start).await {
-                Ok(count) => {
+            let sem = semaphore.clone();
+            let service = self.clone();
+            
+            handles.push(tokio::spawn(async move {
+                let _permit = sem.acquire().await.expect("Semaphore closed unexpectedly");
+                let result = service.sync_channel(&channel).await;
+                (channel.channel_name.clone(), result)
+            }));
+        }
+        
+        let mut total_items = 0;
+        for handle in handles {
+            match handle.await {
+                Ok((_channel_name, Ok(count))) => {
                     total_items += count;
                 }
+                Ok((channel_name, Err(e))) => {
+                    tracing::error!("Error syncing channel {}: {}", channel_name, e);
+                    errors.push(format!("{}: {}", channel_name, e));
+                }
                 Err(e) => {
-                    tracing::error!("Error syncing channel {}: {}", channel.channel_name, e);
-                    errors.push(format!("{}: {}", channel.channel_name, e));
+                    tracing::error!("Task join error: {}", e);
+                    errors.push(format!("Task error: {}", e));
                 }
             }
         }
@@ -89,15 +188,14 @@ impl SlackSyncService {
         })
     }
     
-    /// Sync a single channel with date-aware cursor logic
-    async fn sync_channel(&self, channel: &SlackChannelSelection, _today_start: f64) -> Result<i32, SlackError> {
+    async fn sync_channel(&self, channel: &SlackChannelSelection) -> Result<i32, SlackError> {
         tracing::debug!("Syncing channel: {} ({})", channel.channel_name, channel.channel_id);
         
         let mut items_synced = 0;
         
-        // For now, always fetch recent messages without cursor filter
-        // TODO: Restore cursor logic for incremental sync
-        let oldest: Option<String> = None;
+        let oldest = self.get_sync_cursor(&channel.channel_id).await?;
+        let mut newest_ts: Option<String> = None;
+        let mut api_cursor: Option<String> = None;
         
         let slack_channel = SlackChannel {
             id: channel.channel_id.clone(),
@@ -111,37 +209,94 @@ impl SlackSyncService {
             topic: None,
         };
         
-        let messages = self.client
-            .get_channel_history(&channel.channel_id, oldest.as_deref(), 100)
-            .await?;
-        tracing::debug!("Got {} messages from channel {}", messages.len(), channel.channel_name);
-        
-        for msg in &messages {
-            self.store_message(&slack_channel, msg).await?;
-            items_synced += 1;
+        loop {
+            let response = self.fetch_with_retry(|| async {
+                self.client
+                    .get_channel_history(
+                        &channel.channel_id,
+                        oldest.as_deref(),
+                        api_cursor.as_deref(),
+                        100,
+                    )
+                    .await
+            }).await?;
             
-            // Fetch thread replies if this is a parent message with replies
-            if msg.reply_count.map(|c| c > 0).unwrap_or(false) {
-                if let Some(ref thread_ts) = msg.thread_ts {
-                    let replies = self.client
-                        .get_thread_replies(&channel.channel_id, thread_ts)
-                        .await?;
+            tracing::debug!(
+                "Got {} messages from channel {} (has_more: {})",
+                response.messages.len(),
+                channel.channel_name,
+                response.has_more
+            );
+            
+            // Slack returns messages in reverse chronological order
+            if newest_ts.is_none() {
+                newest_ts = response.messages.first().map(|m| m.ts.clone());
+            }
+            
+            for msg in &response.messages {
+                self.store_message(&slack_channel, msg).await?;
+                items_synced += 1;
+                
+                if msg.reply_count.map(|c| c > 0).unwrap_or(false) {
+                    sleep(Duration::from_millis(API_CALL_DELAY_MS)).await;
+                    let thread_ts = msg.thread_ts.as_ref().unwrap_or(&msg.ts);
+                    let replies = self.fetch_with_retry(|| async {
+                        self.client
+                            .get_thread_replies(&channel.channel_id, thread_ts)
+                            .await
+                    }).await?;
                     
-                    for reply in &replies {
+                    for reply in replies.iter().skip(1) {
                         self.store_message(&slack_channel, reply).await?;
                         items_synced += 1;
                     }
                 }
             }
+            
+            if !response.has_more {
+                break;
+            }
+            
+            api_cursor = response.next_cursor;
+            if api_cursor.is_none() {
+                break;
+            }
+            
+            sleep(Duration::from_millis(API_CALL_DELAY_MS)).await;
         }
         
-        // Update cursor to latest message timestamp
-        if let Some(last_msg) = messages.first() {
-            self.update_sync_cursor(&channel.channel_id, &last_msg.ts).await?;
+        if let Some(ts) = newest_ts {
+            self.update_sync_cursor(&channel.channel_id, &ts).await?;
         }
         
         tracing::debug!("Synced {} messages from channel {}", items_synced, channel.channel_name);
         Ok(items_synced)
+    }
+    
+    async fn fetch_with_retry<F, Fut, T>(&self, f: F) -> Result<T, SlackError>
+    where
+        F: Fn() -> Fut,
+        Fut: std::future::Future<Output = Result<T, SlackError>>,
+    {
+        let mut retries = 0;
+        
+        loop {
+            match f().await {
+                Ok(result) => return Ok(result),
+                Err(SlackError::Api(ref msg)) if msg.contains("429") && retries < MAX_RETRIES => {
+                    retries += 1;
+                    let delay = RETRY_BASE_DELAY_MS * (1 << retries); // Exponential backoff
+                    tracing::warn!(
+                        "Rate limited (429), retry {}/{} after {}ms",
+                        retries,
+                        MAX_RETRIES,
+                        delay
+                    );
+                    sleep(Duration::from_millis(delay)).await;
+                }
+                Err(e) => return Err(e),
+            }
+        }
     }
     
     async fn update_sync_cursor(&self, channel_id: &str, cursor: &str) -> Result<(), SlackError> {

@@ -1,5 +1,5 @@
 import { useEffect, useCallback } from 'react'
-import { X, ExternalLink } from 'lucide-react'
+import { X, ExternalLink, Hash, Users, MessageSquare } from 'lucide-react'
 import { CategoryBadge } from './CategoryBadge'
 import { SourceIcon } from './SourceIcon'
 import { ImportanceIndicator } from './ImportanceIndicator'
@@ -95,6 +95,65 @@ export function ContentDetailModal({ item, onClose }: ContentDetailModalProps) {
                   </li>
                 ))}
               </ul>
+            </div>
+          )}
+
+          {/* Source Info - Channels, People, Message Count */}
+          {(item.channels?.length || item.people?.length || item.messageCount) && (
+            <div className="p-4 bg-muted/50 rounded-lg space-y-3">
+              <h3 className="text-sm font-medium text-foreground">Sources</h3>
+              
+              {/* Channels */}
+              {item.channels && item.channels.length > 0 && (
+                <div className="flex items-start gap-3">
+                  <Hash className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />
+                  <div>
+                    <div className="text-xs text-muted-foreground mb-1">Channels</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {item.channels.map((channel, index) => (
+                        <span
+                          key={index}
+                          className="inline-flex items-center px-2 py-0.5 rounded bg-background text-sm text-foreground"
+                        >
+                          {channel}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {/* People */}
+              {item.people && item.people.length > 0 && (
+                <div className="flex items-start gap-3">
+                  <Users className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />
+                  <div>
+                    <div className="text-xs text-muted-foreground mb-1">People</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {item.people.map((person, index) => (
+                        <span
+                          key={index}
+                          className="inline-flex items-center px-2 py-0.5 rounded bg-background text-sm text-foreground"
+                        >
+                          {person}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {/* Message Count */}
+              {item.messageCount && item.messageCount > 0 && (
+                <div className="flex items-center gap-3">
+                  <MessageSquare className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                  <div>
+                    <span className="text-sm text-muted-foreground">
+                      Based on <span className="font-medium text-foreground">{item.messageCount}</span> messages
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

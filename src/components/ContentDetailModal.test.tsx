@@ -173,4 +173,46 @@ describe('ContentDetailModal', () => {
       windowOpen.mockRestore()
     })
   })
+
+  describe('source info section', () => {
+    it('displays channels when present', () => {
+      const itemWithChannels = { ...mockItem, channels: ['#general', '#engineering'] }
+      render(<ContentDetailModal item={itemWithChannels} onClose={mockOnClose} />)
+      expect(screen.getByText('#general')).toBeInTheDocument()
+      expect(screen.getByText('#engineering')).toBeInTheDocument()
+      expect(screen.getByText('Channels')).toBeInTheDocument()
+    })
+
+    it('displays people when present', () => {
+      const itemWithPeople = { ...mockItem, people: ['Alice', 'Bob'] }
+      render(<ContentDetailModal item={itemWithPeople} onClose={mockOnClose} />)
+      expect(screen.getByText('Alice')).toBeInTheDocument()
+      expect(screen.getByText('Bob')).toBeInTheDocument()
+      expect(screen.getByText('People')).toBeInTheDocument()
+    })
+
+    it('displays message count when present', () => {
+      const itemWithMessageCount = { ...mockItem, messageCount: 42 }
+      render(<ContentDetailModal item={itemWithMessageCount} onClose={mockOnClose} />)
+      expect(screen.getByText('42')).toBeInTheDocument()
+      expect(screen.getByText(/messages/i)).toBeInTheDocument()
+    })
+
+    it('displays Sources heading when any source info is present', () => {
+      const itemWithSources = { ...mockItem, channels: ['#test'] }
+      render(<ContentDetailModal item={itemWithSources} onClose={mockOnClose} />)
+      expect(screen.getByText('Sources')).toBeInTheDocument()
+    })
+
+    it('does not display source info section when no source info', () => {
+      render(<ContentDetailModal item={mockItem} onClose={mockOnClose} />)
+      expect(screen.queryByText('Sources')).not.toBeInTheDocument()
+    })
+
+    it('does not display source info section when arrays are empty', () => {
+      const itemWithEmptyArrays = { ...mockItem, channels: [], people: [] }
+      render(<ContentDetailModal item={itemWithEmptyArrays} onClose={mockOnClose} />)
+      expect(screen.queryByText('Sources')).not.toBeInTheDocument()
+    })
+  })
 })

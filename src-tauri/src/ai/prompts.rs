@@ -268,6 +268,89 @@ Guidelines:
 - topic_id: When updating an existing topic, copy the exact topic_id string from the existing topics list. For new topics, set topic_id to null"##)
 }
 
+/// Channel summary for hierarchical summarization
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChannelSummary {
+    pub channel: String,
+    pub summary: String,
+    pub key_topics: Vec<String>,
+    pub key_people: Vec<String>,
+    pub importance_score: f64,
+    pub notable_message_ids: Vec<String>,
+    pub message_count: i32,
+}
+
+pub fn channel_summary_prompt(channel: &str, purpose: Option<&str>, messages_json: &str) -> String {
+    let purpose_line = purpose
+        .map(|p| format!("Channel purpose: {}\n", p))
+        .unwrap_or_default();
+    
+    format!(r##"Summarize the discussion in #{channel}.
+{purpose_line}
+Messages:
+{messages_json}
+
+Return JSON with this structure:
+{{
+  "channel": "{channel}",
+  "summary": "2-3 sentence summary of the key discussions in this channel",
+  "key_topics": ["topic1", "topic2", "topic3"],
+  "key_people": ["person1", "person2"],
+  "importance_score": 0.0-1.0,
+  "notable_message_ids": ["id1", "id2"]
+}}
+
+Guidelines:
+- Focus on the most significant discussions and decisions
+- importance_score: 0.9-1.0 for critical decisions, 0.6-0.8 for important updates, 0.3-0.5 for routine
+- notable_message_ids: include IDs of the 2-5 most important messages"##)
+}
+
+/// Prompt for cross-channel grouping (second pass of hierarchical summarization)
+pub fn cross_channel_grouping_prompt(date: &str, channel_summaries_json: &str, ungrouped_messages_json: Option<&str>) -> String {
+    let ungrouped_section = ungrouped_messages_json
+        .map(|json| format!(r##"
+MESSAGES FROM LOW-VOLUME CHANNELS (process directly):
+{json}
+"##))
+        .unwrap_or_default();
+    
+    format!(r##"You are creating a daily digest for {date} by combining summaries from multiple Slack channels.
+
+CHANNEL SUMMARIES:
+{channel_summaries_json}
+{ungrouped_section}
+Your task is to:
+1. Identify topics that span multiple channels (cross-channel themes)
+2. Group related channel discussions together
+3. Create an executive summary of the entire day
+
+Return JSON with this structure:
+{{
+  "groups": [
+    {{
+      "topic": "Cross-channel topic name (e.g., 'Q1 Product Launch')",
+      "channels": ["#channel1", "#channel2"],
+      "summary": "2-4 sentence summary combining the related discussions",
+      "highlights": ["key point 1", "key point 2"],
+      "category": "one of: sales, marketing, product, engineering, research, other",
+      "importance_score": 0.0-1.0,
+      "message_ids": ["notable_id1", "notable_id2"],
+      "people": ["person1", "person2"]
+    }}
+  ],
+  "daily_summary": "3-4 sentence executive summary of the day",
+  "key_themes": ["theme1", "theme2", "theme3"],
+  "action_items": ["action1", "action2"]
+}}
+
+Guidelines:
+- Group discussions by TOPIC, not by channel
+- A channel's content can be split across multiple topic groups
+- importance_score: based on business impact, not just activity level
+- Include action items that emerge from discussions"##)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -640,5 +723,69 @@ mod tests {
         
         assert_eq!(parsed.topic_id, Some("topic_roundtrip_123".into()));
         assert_eq!(parsed.topic, "Roundtrip Test");
+    }
+
+    #[test]
+    fn test_channel_summary_serialization() {
+        let summary = ChannelSummary {
+            channel: "engineering".into(),
+            summary: "Discussion about API design".into(),
+            key_topics: vec!["api".into(), "design".into()],
+            key_people: vec!["alice".into(), "bob".into()],
+            importance_score: 0.8,
+            notable_message_ids: vec!["msg1".into(), "msg2".into()],
+            message_count: 42,
+        };
+
+        let json = serde_json::to_string(&summary).unwrap();
+        let parsed: ChannelSummary = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.channel, "engineering");
+        assert_eq!(parsed.key_topics.len(), 2);
+        assert_eq!(parsed.key_people.len(), 2);
+        assert_eq!(parsed.importance_score, 0.8);
+        assert_eq!(parsed.message_count, 42);
+    }
+
+    #[test]
+    fn test_channel_summary_prompt_contains_channel() {
+        let prompt = channel_summary_prompt("general", None, "[]");
+        assert!(prompt.contains("#general"));
+        assert!(prompt.contains("Messages:"));
+        assert!(prompt.contains("key_topics"));
+    }
+
+    #[test]
+    fn test_channel_summary_prompt_with_purpose() {
+        let prompt = channel_summary_prompt("sales", Some("Sales team discussions"), "[]");
+        assert!(prompt.contains("#sales"));
+        assert!(prompt.contains("Channel purpose: Sales team discussions"));
+    }
+
+    #[test]
+    fn test_channel_summary_prompt_without_purpose() {
+        let prompt = channel_summary_prompt("random", None, "[]");
+        assert!(prompt.contains("#random"));
+        assert!(!prompt.contains("Channel purpose:"));
+    }
+
+    #[test]
+    fn test_cross_channel_grouping_prompt_contains_date() {
+        let prompt = cross_channel_grouping_prompt("2024-01-20", "[]", None);
+        assert!(prompt.contains("2024-01-20"));
+        assert!(prompt.contains("CHANNEL SUMMARIES"));
+    }
+
+    #[test]
+    fn test_cross_channel_grouping_prompt_with_ungrouped() {
+        let prompt = cross_channel_grouping_prompt("2024-01-20", "[]", Some("[{\"id\":\"1\"}]"));
+        assert!(prompt.contains("MESSAGES FROM LOW-VOLUME CHANNELS"));
+        assert!(prompt.contains("[{\"id\":\"1\"}]"));
+    }
+
+    #[test]
+    fn test_cross_channel_grouping_prompt_without_ungrouped() {
+        let prompt = cross_channel_grouping_prompt("2024-01-20", "[]", None);
+        assert!(!prompt.contains("MESSAGES FROM LOW-VOLUME CHANNELS"));
     }
 }

@@ -1,11 +1,15 @@
 use std::sync::Arc;
+use std::collections::HashMap;
 use sha2::{Sha256, Digest};
 use chrono::Utc;
 use serde::Serialize;
 use crate::db::Database;
 use crate::crypto::CryptoService;
 use super::gemini::{GeminiClient, ServiceAccountCredentials};
-use super::prompts::{self, SummaryResult, GroupedAnalysisResult, ExistingTopic};
+use super::prompts::{self, SummaryResult, GroupedAnalysisResult, ExistingTopic, ChannelSummary};
+
+const HIERARCHICAL_CHANNEL_THRESHOLD: usize = 50;
+const HIERARCHICAL_TOTAL_THRESHOLD: usize = 200;
 
 #[derive(sqlx::FromRow)]
 struct ContentItemRow {
@@ -16,7 +20,16 @@ struct ContentItemRow {
     body: Option<String>,
     author_id: Option<String>,
     channel_or_project: Option<String>,
+    source_url: Option<String>,
+    parent_id: Option<String>,
     created_at: i64,
+}
+
+#[derive(sqlx::FromRow)]
+struct SlackUserRow {
+    user_id: String,
+    real_name: Option<String>,
+    display_name: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -26,6 +39,10 @@ struct MessageForPrompt {
     author: String,
     timestamp: String,
     text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thread_id: Option<String>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -77,6 +94,92 @@ impl ProcessingPipeline {
             crypto,
         }
     }
+    
+    async fn load_user_map(&self) -> Result<HashMap<String, String>, String> {
+        let users: Vec<SlackUserRow> = sqlx::query_as(
+            "SELECT user_id, real_name, display_name FROM slack_users"
+        )
+        .fetch_all(self.db.pool())
+        .await
+        .map_err(|e| e.to_string())?;
+        
+        let mut map = HashMap::new();
+        for user in users {
+            // Prefer display_name, fall back to real_name, then user_id
+            let name = user.display_name
+                .filter(|s| !s.is_empty())
+                .or(user.real_name)
+                .unwrap_or_else(|| user.user_id.clone());
+            map.insert(user.user_id, name);
+        }
+        
+        Ok(map)
+    }
+    
+    async fn process_hierarchical(
+        &self,
+        date_str: &str,
+        messages_by_channel: HashMap<String, Vec<MessageForPrompt>>,
+    ) -> Result<GroupedAnalysisResult, String> {
+        let mut channel_summaries: Vec<ChannelSummary> = Vec::new();
+        let mut small_channel_messages: Vec<MessageForPrompt> = Vec::new();
+        
+        for (channel, messages) in messages_by_channel {
+            if messages.len() >= HIERARCHICAL_CHANNEL_THRESHOLD {
+                tracing::info!(
+                    "Summarizing high-volume channel {} ({} messages)",
+                    channel,
+                    messages.len()
+                );
+                
+                let messages_json = serde_json::to_string_pretty(&messages)
+                    .map_err(|e| e.to_string())?;
+                
+                let prompt = prompts::channel_summary_prompt(&channel, None, &messages_json);
+                
+                match self.gemini.generate_json::<ChannelSummary>(&prompt).await {
+                    Ok(mut summary) => {
+                        summary.message_count = messages.len() as i32;
+                        channel_summaries.push(summary);
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to summarize channel {}: {}", channel, e);
+                        small_channel_messages.extend(messages);
+                    }
+                }
+            } else {
+                small_channel_messages.extend(messages);
+            }
+        }
+        
+        tracing::info!(
+            "Pass 1 complete: {} channel summaries, {} messages for direct processing",
+            channel_summaries.len(),
+            small_channel_messages.len()
+        );
+        
+        let channel_summaries_json = serde_json::to_string_pretty(&channel_summaries)
+            .map_err(|e| e.to_string())?;
+        
+        let ungrouped_json = if small_channel_messages.is_empty() {
+            None
+        } else {
+            Some(serde_json::to_string_pretty(&small_channel_messages).map_err(|e| e.to_string())?)
+        };
+        
+        let prompt = prompts::cross_channel_grouping_prompt(
+            date_str,
+            &channel_summaries_json,
+            ungrouped_json.as_deref(),
+        );
+        
+        let result: GroupedAnalysisResult = self.gemini
+            .generate_json(&prompt)
+            .await
+            .map_err(|e| e.to_string())?;
+        
+        Ok(result)
+    }
 
     /// Process daily batch with optional timezone offset.
     /// `timezone_offset_minutes`: Minutes offset from UTC (positive = west of UTC, e.g., PST = 480)
@@ -105,7 +208,7 @@ impl ProcessingPipeline {
 
         let items: Vec<ContentItemRow> = sqlx::query_as(
             "SELECT ci.id, ci.source, ci.content_type, ci.title, ci.body, 
-                    ci.author_id, ci.channel_or_project, ci.created_at
+                    ci.author_id, ci.channel_or_project, ci.source_url, ci.parent_id, ci.created_at
              FROM content_items ci
              LEFT JOIN ai_summaries s ON ci.id = s.content_item_id
              WHERE s.id IS NULL AND ci.created_at >= ? AND ci.created_at < ?
@@ -123,6 +226,7 @@ impl ProcessingPipeline {
         }
 
         tracing::info!("Processing {} items in batch for {}", items.len(), date_str);
+        let user_map = self.load_user_map().await.unwrap_or_default();
 
         let existing_topic_rows: Vec<ExistingTopicRow> = sqlx::query_as(
             "SELECT id, summary, category, importance_score, entities
@@ -200,13 +304,21 @@ impl ProcessingPipeline {
             let timestamp = chrono::DateTime::from_timestamp_millis(item.created_at)
                 .map(|dt| dt.format("%H:%M").to_string())
                 .unwrap_or_default();
+            
+            let author_name = item.author_id
+                .as_ref()
+                .and_then(|id| user_map.get(id))
+                .cloned()
+                .unwrap_or_else(|| item.author_id.clone().unwrap_or_else(|| "unknown".to_string()));
 
             messages_for_prompt.push(MessageForPrompt {
                 id: item.id.clone(),
                 channel: item.channel_or_project.clone().unwrap_or_else(|| "unknown".to_string()),
-                author: item.author_id.clone().unwrap_or_else(|| "unknown".to_string()),
+                author: author_name,
                 timestamp,
                 text,
+                url: item.source_url.clone(),
+                thread_id: item.parent_id.clone(),
             });
             item_ids.push(item.id.clone());
         }
@@ -216,23 +328,43 @@ impl ProcessingPipeline {
             return Ok(0);
         }
 
-        let messages_json = serde_json::to_string_pretty(&messages_for_prompt)
-            .map_err(|e| e.to_string())?;
+        let use_hierarchical = messages_for_prompt.len() >= HIERARCHICAL_TOTAL_THRESHOLD;
         
-        let prompt = if existing_topics.is_empty() {
-            prompts::batch_analysis_prompt(&date_str, &messages_json)
+        let result: GroupedAnalysisResult = if use_hierarchical {
+            tracing::info!(
+                "Using hierarchical summarization for {} messages",
+                messages_for_prompt.len()
+            );
+            
+            let mut messages_by_channel: HashMap<String, Vec<MessageForPrompt>> = HashMap::new();
+            for msg in messages_for_prompt {
+                messages_by_channel
+                    .entry(msg.channel.clone())
+                    .or_default()
+                    .push(msg);
+            }
+            
+            self.process_hierarchical(&date_str, messages_by_channel).await?
         } else {
-            let existing_topics_json = serde_json::to_string_pretty(&existing_topics)
+            let messages_json = serde_json::to_string_pretty(&messages_for_prompt)
                 .map_err(|e| e.to_string())?;
-            prompts::batch_analysis_prompt_with_existing(&date_str, &messages_json, Some(&existing_topics_json))
-        };
+            
+            let prompt = if existing_topics.is_empty() {
+                prompts::batch_analysis_prompt(&date_str, &messages_json)
+            } else {
+                let existing_topics_json = serde_json::to_string_pretty(&existing_topics)
+                    .map_err(|e| e.to_string())?;
+                prompts::batch_analysis_prompt_with_existing(&date_str, &messages_json, Some(&existing_topics_json))
+            };
 
-        tracing::info!("Sending batch of {} messages to AI for analysis (with {} existing topics)", 
-            messages_for_prompt.len(), existing_topics.len());
-        let result: GroupedAnalysisResult = self.gemini
-            .generate_json(&prompt)
-            .await
-            .map_err(|e| e.to_string())?;
+            tracing::info!("Sending batch of {} messages to AI for analysis (with {} existing topics)", 
+                messages_for_prompt.len(), existing_topics.len());
+            
+            self.gemini
+                .generate_json(&prompt)
+                .await
+                .map_err(|e| e.to_string())?
+        };
 
         let now = Utc::now().timestamp_millis();
         let mut stored_count = 0;
