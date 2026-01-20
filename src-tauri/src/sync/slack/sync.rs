@@ -17,6 +17,13 @@ const API_CALL_DELAY_MS: u64 = 500;
 const MAX_RETRIES: u32 = 3;
 const RETRY_BASE_DELAY_MS: u64 = 2000;
 
+fn get_today_start_ts() -> String {
+    let now = chrono::Utc::now();
+    let today_start = now.date_naive().and_hms_opt(0, 0, 0).unwrap();
+    let ts = today_start.and_utc().timestamp();
+    format!("{}.000000", ts)
+}
+
 #[derive(Clone)]
 pub struct SlackSyncService {
     client: SlackClient,
@@ -193,7 +200,8 @@ impl SlackSyncService {
         
         let mut items_synced = 0;
         
-        let oldest = self.get_sync_cursor(&channel.channel_id).await?;
+        let oldest = self.get_sync_cursor(&channel.channel_id).await?
+            .or_else(|| Some(get_today_start_ts()));
         let mut newest_ts: Option<String> = None;
         let mut api_cursor: Option<String> = None;
         
@@ -354,5 +362,57 @@ impl SlackSyncService {
         .await?;
         
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Timelike;
+
+    #[test]
+    fn test_get_today_start_ts_format() {
+        let ts = get_today_start_ts();
+        assert!(ts.ends_with(".000000"), "should end with .000000, got: {}", ts);
+    }
+
+    #[test]
+    fn test_get_today_start_ts_is_parseable() {
+        let ts = get_today_start_ts();
+        let parsed: f64 = ts.parse().expect("should be parseable as f64");
+        assert!(parsed > 0.0, "should be a positive timestamp");
+    }
+
+    #[test]
+    fn test_get_today_start_ts_is_midnight_utc() {
+        let ts = get_today_start_ts();
+        let seconds: i64 = ts.split('.').next().unwrap().parse().unwrap();
+        let datetime = chrono::DateTime::from_timestamp(seconds, 0).unwrap();
+        
+        assert_eq!(datetime.time().hour(), 0);
+        assert_eq!(datetime.time().minute(), 0);
+        assert_eq!(datetime.time().second(), 0);
+    }
+
+    #[test]
+    fn test_get_today_start_ts_is_today() {
+        let ts = get_today_start_ts();
+        let seconds: i64 = ts.split('.').next().unwrap().parse().unwrap();
+        let ts_date = chrono::DateTime::from_timestamp(seconds, 0).unwrap().date_naive();
+        let today = chrono::Utc::now().date_naive();
+        
+        assert_eq!(ts_date, today, "timestamp should be for today's date");
+    }
+
+    #[test]
+    fn test_get_today_start_ts_reasonable_range() {
+        let ts = get_today_start_ts();
+        let seconds: i64 = ts.split('.').next().unwrap().parse().unwrap();
+        
+        let year_2020 = 1577836800_i64;
+        let year_2100 = 4102444800_i64;
+        
+        assert!(seconds > year_2020, "timestamp should be after 2020");
+        assert!(seconds < year_2100, "timestamp should be before 2100");
     }
 }
