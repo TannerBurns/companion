@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import {
   format,
   startOfWeek,
@@ -8,11 +8,12 @@ import {
   eachDayOfInterval,
   isSameDay,
 } from 'date-fns'
-import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Calendar, Download } from 'lucide-react'
 import { useWeeklyDigest } from '../hooks/useDigest'
 import { ContentCard, ContentDetailModal } from '../components'
 import { Button } from '../components/ui/Button'
 import { useAppStore } from '../store'
+import { exportDigestPDF, type PDFDayGroup } from '../lib/pdf'
 import type { DigestItem } from '../lib/api'
 
 const CATEGORIES = ['all', 'engineering', 'product', 'sales', 'marketing', 'research', 'other'] as const
@@ -23,10 +24,11 @@ interface DayGroup {
 }
 
 export function WeeklySummaryView() {
-  const { setView } = useAppStore()
+  const { setView, addLocalActivity, updateLocalActivity } = useAppStore()
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }))
   const [filter, setFilter] = useState<string>('all')
   const [selectedItem, setSelectedItem] = useState<DigestItem | null>(null)
+  const [isExporting, setIsExporting] = useState(false)
 
   const weekStartStr = format(weekStart, 'yyyy-MM-dd')
   const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 })
@@ -60,10 +62,50 @@ export function WeeklySummaryView() {
 
   const totalItems = filteredItems.length
 
+  const handleExportPDF = useCallback(async () => {
+    if (!data || data.items.length === 0) return
+    setIsExporting(true)
+    
+    const dateLabel = `${format(weekStart, 'MMM d')} - ${format(weekEnd, 'MMM d, yyyy')}`
+    const activityId = addLocalActivity({
+      type: 'pdf_export',
+      message: `Weekly Summary - ${dateLabel}`,
+      status: 'running',
+    })
+    
+    try {
+      const pdfDayGroups: PDFDayGroup[] = dayGroups.map(group => ({
+        date: group.date,
+        dateLabel: format(group.date, 'EEEE, MMMM d'),
+        items: group.items,
+      }))
+
+      await exportDigestPDF({
+        digest: data,
+        type: 'weekly',
+        dateLabel,
+        dayGroups: pdfDayGroups,
+      })
+      updateLocalActivity(activityId, {
+        status: 'completed',
+        message: `Weekly Summary - ${dateLabel}`,
+      })
+    } catch (error) {
+      console.error('Failed to export PDF:', error)
+      updateLocalActivity(activityId, {
+        status: 'failed',
+        error: error instanceof Error ? error.message : 'Export failed',
+      })
+    } finally {
+      setIsExporting(false)
+    }
+  }, [data, weekStart, weekEnd, dayGroups, addLocalActivity, updateLocalActivity])
+
   return (
     <div className="mx-auto max-w-4xl">
       {/* Header */}
-      <div className="mb-6 flex items-center justify-center">
+      <div className="mb-6 flex items-center justify-between">
+        <div className="w-24" /> {/* Spacer for centering */}
         <div className="flex items-center gap-2">
           <button
             onClick={() => setWeekStart(d => subWeeks(d, 1))}
@@ -87,6 +129,18 @@ export function WeeklySummaryView() {
           >
             <ChevronRight className="h-5 w-5 text-foreground" />
           </button>
+        </div>
+        <div className="w-24 flex justify-end">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportPDF}
+            disabled={isLoading || isExporting || !data || data.items.length === 0}
+            aria-label="Export as PDF"
+          >
+            <Download className="h-4 w-4 mr-1.5" />
+            {isExporting ? 'Exporting...' : 'PDF'}
+          </Button>
         </div>
       </div>
 

@@ -35,7 +35,7 @@ function TaskItem({ task }: { task: PipelineTask }) {
 }
 
 export function PipelineStatus() {
-  const { activeTasks, recentHistory, isBusy, taskCount } = usePipeline()
+  const { activeTasks, recentHistory, isBusy, taskCount, hasUnseenActivity, markActivitySeen } = usePipeline()
   const [isOpen, setIsOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
@@ -50,12 +50,18 @@ export function PipelineStatus() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+  useEffect(() => {
+    if (isOpen && hasUnseenActivity) {
+      markActivitySeen()
+    }
+  }, [isOpen, hasUnseenActivity, markActivitySeen])
+
   return (
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={clsx(
-          'flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm transition-colors',
+          'relative flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm transition-colors',
           isBusy
             ? 'bg-primary-50 text-primary-600 dark:bg-primary-900/30 dark:text-primary-400'
             : 'text-muted-foreground hover:bg-muted'
@@ -71,6 +77,13 @@ export function PipelineStatus() {
         <ChevronDown
           className={clsx('h-3 w-3 transition-transform', isOpen && 'rotate-180')}
         />
+        {/* Unseen activity indicator */}
+        {hasUnseenActivity && !isOpen && (
+          <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary-400 opacity-75" />
+            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary-500" />
+          </span>
+        )}
       </button>
 
       {isOpen && (

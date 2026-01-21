@@ -11,6 +11,18 @@ export interface SlackState {
   selectedChannelCount: number
 }
 
+export type LocalActivityStatus = 'running' | 'completed' | 'failed'
+
+export interface LocalActivity {
+  id: string
+  type: 'pdf_export'
+  message: string
+  status: LocalActivityStatus
+  startedAt: number
+  completedAt: number | null
+  error: string | null
+}
+
 export interface AppStore {
   currentView: View
   settingsSection: SettingsSection
@@ -23,6 +35,14 @@ export interface AppStore {
   setSlackState: (state: Partial<SlackState>) => void
   setShowChannelSelector: (show: boolean) => void
   resetSlackState: () => void
+
+  // Local activities (client-side tasks like PDF export)
+  localActivities: LocalActivity[]
+  hasUnseenActivity: boolean
+  addLocalActivity: (activity: Omit<LocalActivity, 'id' | 'startedAt' | 'completedAt' | 'error'> & { status: 'running' }) => string
+  updateLocalActivity: (id: string, updates: Partial<Pick<LocalActivity, 'status' | 'message' | 'error'>>) => void
+  clearOldLocalActivities: () => void
+  markActivitySeen: () => void
 }
 
 const initialSlackState: SlackState = {
@@ -32,6 +52,8 @@ const initialSlackState: SlackState = {
   userId: null,
   selectedChannelCount: 0,
 }
+
+let activityIdCounter = 0
 
 export const useAppStore = create<AppStore>((set) => ({
   currentView: 'daily-digest',
@@ -50,4 +72,52 @@ export const useAppStore = create<AppStore>((set) => ({
     slack: initialSlackState, 
     showChannelSelector: false 
   }),
+
+  // Local activities
+  localActivities: [],
+  hasUnseenActivity: false,
+  addLocalActivity: (activity) => {
+    const id = `local-${++activityIdCounter}-${Date.now()}`
+    set((prev) => ({
+      localActivities: [
+        {
+          ...activity,
+          id,
+          startedAt: Date.now(),
+          completedAt: null,
+          error: null,
+        },
+        ...prev.localActivities,
+      ],
+      hasUnseenActivity: true,
+    }))
+    return id
+  },
+  updateLocalActivity: (id, updates) => {
+    set((prev) => ({
+      localActivities: prev.localActivities.map((activity) =>
+        activity.id === id
+          ? {
+              ...activity,
+              ...updates,
+              completedAt: updates.status === 'completed' || updates.status === 'failed'
+                ? Date.now()
+                : activity.completedAt,
+            }
+          : activity
+      ),
+      hasUnseenActivity: true,
+    }))
+  },
+  clearOldLocalActivities: () => {
+    const fiveMinutesAgo = Date.now() - 5 * 60 * 1000
+    set((prev) => ({
+      localActivities: prev.localActivities.filter(
+        (activity) =>
+          activity.status === 'running' ||
+          (activity.completedAt && activity.completedAt > fiveMinutesAgo)
+      ),
+    }))
+  },
+  markActivitySeen: () => set({ hasUnseenActivity: false }),
 }))

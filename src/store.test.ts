@@ -17,6 +17,8 @@ describe('useAppStore', () => {
       settingsSection: 'sources',
       slack: initialSlackState,
       showChannelSelector: false,
+      localActivities: [],
+      hasUnseenActivity: false,
     })
   })
 
@@ -218,6 +220,260 @@ describe('useAppStore', () => {
         useAppStore.getState().setView('settings')
         useAppStore.getState().setSlackState({ connected: true })
         expect(useAppStore.getState().currentView).toBe('settings')
+      })
+    })
+  })
+
+  describe('local activities', () => {
+    describe('initial state', () => {
+      it('has empty localActivities by default', () => {
+        expect(useAppStore.getState().localActivities).toEqual([])
+      })
+
+      it('has hasUnseenActivity false by default', () => {
+        expect(useAppStore.getState().hasUnseenActivity).toBe(false)
+      })
+    })
+
+    describe('addLocalActivity', () => {
+      it('adds activity to the list', () => {
+        useAppStore.getState().addLocalActivity({
+          type: 'pdf_export',
+          message: 'Test export',
+          status: 'running',
+        })
+        
+        const { localActivities } = useAppStore.getState()
+        expect(localActivities).toHaveLength(1)
+        expect(localActivities[0].type).toBe('pdf_export')
+        expect(localActivities[0].message).toBe('Test export')
+        expect(localActivities[0].status).toBe('running')
+      })
+
+      it('generates unique ID for each activity', () => {
+        const id1 = useAppStore.getState().addLocalActivity({
+          type: 'pdf_export',
+          message: 'Export 1',
+          status: 'running',
+        })
+        const id2 = useAppStore.getState().addLocalActivity({
+          type: 'pdf_export',
+          message: 'Export 2',
+          status: 'running',
+        })
+        
+        expect(id1).not.toBe(id2)
+        expect(id1).toMatch(/^local-\d+-\d+$/)
+        expect(id2).toMatch(/^local-\d+-\d+$/)
+      })
+
+      it('sets startedAt timestamp', () => {
+        const before = Date.now()
+        useAppStore.getState().addLocalActivity({
+          type: 'pdf_export',
+          message: 'Test',
+          status: 'running',
+        })
+        const after = Date.now()
+        
+        const { localActivities } = useAppStore.getState()
+        expect(localActivities[0].startedAt).toBeGreaterThanOrEqual(before)
+        expect(localActivities[0].startedAt).toBeLessThanOrEqual(after)
+      })
+
+      it('sets completedAt to null and error to null', () => {
+        useAppStore.getState().addLocalActivity({
+          type: 'pdf_export',
+          message: 'Test',
+          status: 'running',
+        })
+        
+        const { localActivities } = useAppStore.getState()
+        expect(localActivities[0].completedAt).toBeNull()
+        expect(localActivities[0].error).toBeNull()
+      })
+
+      it('sets hasUnseenActivity to true', () => {
+        useAppStore.getState().addLocalActivity({
+          type: 'pdf_export',
+          message: 'Test',
+          status: 'running',
+        })
+        
+        expect(useAppStore.getState().hasUnseenActivity).toBe(true)
+      })
+
+      it('prepends new activities to the list', () => {
+        useAppStore.getState().addLocalActivity({
+          type: 'pdf_export',
+          message: 'First',
+          status: 'running',
+        })
+        useAppStore.getState().addLocalActivity({
+          type: 'pdf_export',
+          message: 'Second',
+          status: 'running',
+        })
+        
+        const { localActivities } = useAppStore.getState()
+        expect(localActivities[0].message).toBe('Second')
+        expect(localActivities[1].message).toBe('First')
+      })
+    })
+
+    describe('updateLocalActivity', () => {
+      it('updates the correct activity by ID', () => {
+        const id = useAppStore.getState().addLocalActivity({
+          type: 'pdf_export',
+          message: 'Original',
+          status: 'running',
+        })
+        
+        useAppStore.getState().updateLocalActivity(id, { message: 'Updated' })
+        
+        const { localActivities } = useAppStore.getState()
+        expect(localActivities[0].message).toBe('Updated')
+      })
+
+      it('sets completedAt when status changes to completed', () => {
+        const id = useAppStore.getState().addLocalActivity({
+          type: 'pdf_export',
+          message: 'Test',
+          status: 'running',
+        })
+        
+        const before = Date.now()
+        useAppStore.getState().updateLocalActivity(id, { status: 'completed' })
+        const after = Date.now()
+        
+        const { localActivities } = useAppStore.getState()
+        expect(localActivities[0].completedAt).toBeGreaterThanOrEqual(before)
+        expect(localActivities[0].completedAt).toBeLessThanOrEqual(after)
+      })
+
+      it('sets completedAt when status changes to failed', () => {
+        const id = useAppStore.getState().addLocalActivity({
+          type: 'pdf_export',
+          message: 'Test',
+          status: 'running',
+        })
+        
+        useAppStore.getState().updateLocalActivity(id, { 
+          status: 'failed',
+          error: 'Something went wrong',
+        })
+        
+        const { localActivities } = useAppStore.getState()
+        expect(localActivities[0].completedAt).not.toBeNull()
+        expect(localActivities[0].error).toBe('Something went wrong')
+      })
+
+      it('does not change completedAt if status is not completed or failed', () => {
+        const id = useAppStore.getState().addLocalActivity({
+          type: 'pdf_export',
+          message: 'Test',
+          status: 'running',
+        })
+        
+        useAppStore.getState().updateLocalActivity(id, { message: 'Still running' })
+        
+        const { localActivities } = useAppStore.getState()
+        expect(localActivities[0].completedAt).toBeNull()
+      })
+
+      it('sets hasUnseenActivity to true', () => {
+        const id = useAppStore.getState().addLocalActivity({
+          type: 'pdf_export',
+          message: 'Test',
+          status: 'running',
+        })
+        useAppStore.getState().markActivitySeen()
+        
+        useAppStore.getState().updateLocalActivity(id, { status: 'completed' })
+        
+        expect(useAppStore.getState().hasUnseenActivity).toBe(true)
+      })
+
+      it('does not affect other activities', () => {
+        const id1 = useAppStore.getState().addLocalActivity({
+          type: 'pdf_export',
+          message: 'First',
+          status: 'running',
+        })
+        useAppStore.getState().addLocalActivity({
+          type: 'pdf_export',
+          message: 'Second',
+          status: 'running',
+        })
+        
+        useAppStore.getState().updateLocalActivity(id1, { status: 'completed' })
+        
+        const { localActivities } = useAppStore.getState()
+        expect(localActivities[1].status).toBe('completed')
+        expect(localActivities[0].status).toBe('running')
+      })
+    })
+
+    describe('clearOldLocalActivities', () => {
+      it('removes completed activities older than 5 minutes', () => {
+        const id = useAppStore.getState().addLocalActivity({
+          type: 'pdf_export',
+          message: 'Old',
+          status: 'running',
+        })
+        
+        // Manually set completedAt to 6 minutes ago
+        const sixMinutesAgo = Date.now() - 6 * 60 * 1000
+        useAppStore.setState((prev) => ({
+          localActivities: prev.localActivities.map((a) =>
+            a.id === id ? { ...a, status: 'completed' as const, completedAt: sixMinutesAgo } : a
+          ),
+        }))
+        
+        useAppStore.getState().clearOldLocalActivities()
+        
+        expect(useAppStore.getState().localActivities).toHaveLength(0)
+      })
+
+      it('keeps running activities regardless of age', () => {
+        useAppStore.getState().addLocalActivity({
+          type: 'pdf_export',
+          message: 'Running',
+          status: 'running',
+        })
+        
+        // Even if startedAt was long ago, running activities are kept
+        useAppStore.getState().clearOldLocalActivities()
+        
+        expect(useAppStore.getState().localActivities).toHaveLength(1)
+      })
+
+      it('keeps recent completed activities', () => {
+        const id = useAppStore.getState().addLocalActivity({
+          type: 'pdf_export',
+          message: 'Recent',
+          status: 'running',
+        })
+        useAppStore.getState().updateLocalActivity(id, { status: 'completed' })
+        
+        useAppStore.getState().clearOldLocalActivities()
+        
+        expect(useAppStore.getState().localActivities).toHaveLength(1)
+      })
+    })
+
+    describe('markActivitySeen', () => {
+      it('sets hasUnseenActivity to false', () => {
+        useAppStore.getState().addLocalActivity({
+          type: 'pdf_export',
+          message: 'Test',
+          status: 'running',
+        })
+        expect(useAppStore.getState().hasUnseenActivity).toBe(true)
+        
+        useAppStore.getState().markActivitySeen()
+        
+        expect(useAppStore.getState().hasUnseenActivity).toBe(false)
       })
     })
   })

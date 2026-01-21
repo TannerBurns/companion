@@ -30,6 +30,10 @@ describe('getTaskDisplayName', () => {
     expect(getTaskDisplayName('generate_weekly_digest')).toBe('Generating weekly digest')
   })
 
+  it('returns correct display name for pdf_export', () => {
+    expect(getTaskDisplayName('pdf_export')).toBe('Exporting PDF')
+  })
+
   it('returns task type as fallback for unknown type', () => {
     const unknownType = 'unknown_task' as PipelineTaskType
     expect(getTaskDisplayName(unknownType)).toBe('unknown_task')
@@ -57,6 +61,10 @@ describe('getTaskIcon', () => {
 
   it('returns chart icon for generate_weekly_digest', () => {
     expect(getTaskIcon('generate_weekly_digest')).toBe('📊')
+  })
+
+  it('returns document icon for pdf_export', () => {
+    expect(getTaskIcon('pdf_export')).toBe('📄')
   })
 
   it('returns gear icon as fallback for unknown type', () => {

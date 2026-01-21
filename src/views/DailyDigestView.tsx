@@ -1,19 +1,21 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { format, subDays, addDays, isToday, isFuture } from 'date-fns'
-import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Calendar, Download } from 'lucide-react'
 import { useDailyDigest } from '../hooks/useDigest'
 import { ContentCard, ContentDetailModal } from '../components'
 import { Button } from '../components/ui/Button'
 import { useAppStore } from '../store'
+import { exportDigestPDF } from '../lib/pdf'
 import type { DigestItem } from '../lib/api'
 
 const CATEGORIES = ['all', 'engineering', 'product', 'sales', 'marketing', 'research', 'other'] as const
 
 export function DailyDigestView() {
-  const { setView } = useAppStore()
+  const { setView, addLocalActivity, updateLocalActivity } = useAppStore()
   const [date, setDate] = useState(new Date())
   const [filter, setFilter] = useState<string>('all')
   const [selectedItem, setSelectedItem] = useState<DigestItem | null>(null)
+  const [isExporting, setIsExporting] = useState(false)
 
   const dateStr = format(date, 'yyyy-MM-dd')
   // Send timezone offset in minutes (e.g., PST is -480, EST is -300)
@@ -26,10 +28,43 @@ export function DailyDigestView() {
 
   const canGoForward = !isToday(date) && !isFuture(date)
 
+  const handleExportPDF = useCallback(async () => {
+    if (!data || data.items.length === 0) return
+    setIsExporting(true)
+    
+    const dateLabel = format(date, 'MMMM d, yyyy')
+    const activityId = addLocalActivity({
+      type: 'pdf_export',
+      message: `Daily Digest - ${dateLabel}`,
+      status: 'running',
+    })
+    
+    try {
+      await exportDigestPDF({
+        digest: data,
+        type: 'daily',
+        dateLabel,
+      })
+      updateLocalActivity(activityId, {
+        status: 'completed',
+        message: `Daily Digest - ${dateLabel}`,
+      })
+    } catch (error) {
+      console.error('Failed to export PDF:', error)
+      updateLocalActivity(activityId, {
+        status: 'failed',
+        error: error instanceof Error ? error.message : 'Export failed',
+      })
+    } finally {
+      setIsExporting(false)
+    }
+  }, [data, date, addLocalActivity, updateLocalActivity])
+
   return (
     <div className="mx-auto max-w-4xl">
       {/* Header */}
-      <div className="mb-6 flex items-center justify-center">
+      <div className="mb-6 flex items-center justify-between">
+        <div className="w-24" /> {/* Spacer for centering */}
         <div className="flex items-center gap-2">
           <button
             onClick={() => setDate(d => subDays(d, 1))}
@@ -54,6 +89,18 @@ export function DailyDigestView() {
           >
             <ChevronRight className="h-5 w-5 text-foreground" />
           </button>
+        </div>
+        <div className="w-24 flex justify-end">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportPDF}
+            disabled={isLoading || isExporting || !data || data.items.length === 0}
+            aria-label="Export as PDF"
+          >
+            <Download className="h-4 w-4 mr-1.5" />
+            {isExporting ? 'Exporting...' : 'PDF'}
+          </Button>
         </div>
       </div>
 
