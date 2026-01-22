@@ -8,9 +8,9 @@ type UpdateState =
   | { status: 'idle' }
   | { status: 'checking' }
   | { status: 'available'; update: Update }
-  | { status: 'downloading'; progress: number }
+  | { status: 'downloading'; progress: number; update: Update }
   | { status: 'ready' }
-  | { status: 'error'; message: string }
+  | { status: 'error'; message: string; update: Update }
 
 export function UpdateNotification() {
   const [state, setState] = useState<UpdateState>({ status: 'idle' })
@@ -41,25 +41,24 @@ export function UpdateNotification() {
     return () => clearTimeout(timer)
   }, [checkForUpdates])
 
-  const handleDownloadAndInstall = async () => {
-    if (state.status !== 'available') return
-
-    const { update } = state
+  const handleDownloadAndInstall = async (updateToInstall?: Update) => {
+    const update = updateToInstall ?? (state.status === 'available' ? state.update : state.status === 'error' ? state.update : null)
+    if (!update) return
     
     try {
-      setState({ status: 'downloading', progress: 0 })
+      setState({ status: 'downloading', progress: 0, update })
       
       await update.downloadAndInstall((event) => {
         switch (event.event) {
           case 'Started':
-            setState({ status: 'downloading', progress: 0 })
+            setState({ status: 'downloading', progress: 0, update })
             break
           case 'Progress':
             if (event.data.contentLength) {
               const progress = Math.round((event.data.chunkLength / event.data.contentLength) * 100)
               setState((prev) => 
                 prev.status === 'downloading' 
-                  ? { status: 'downloading', progress: Math.min(prev.progress + progress, 100) }
+                  ? { status: 'downloading', progress: Math.min(prev.progress + progress, 100), update }
                   : prev
               )
             }
@@ -75,7 +74,8 @@ export function UpdateNotification() {
       console.error('Failed to download update:', error)
       setState({ 
         status: 'error', 
-        message: error instanceof Error ? error.message : 'Failed to download update' 
+        message: error instanceof Error ? error.message : 'Failed to download update',
+        update
       })
     }
   }
@@ -178,7 +178,7 @@ export function UpdateNotification() {
               {state.message}
             </p>
             <Button 
-              onClick={checkForUpdates}
+              onClick={() => handleDownloadAndInstall(state.update)}
               variant="outline"
               className="w-full"
               size="sm"
