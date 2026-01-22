@@ -84,8 +84,6 @@ export function UpdateNotification() {
             break
         }
       })
-      
-      setState({ status: 'ready' })
     } catch (error) {
       console.error('Failed to download update:', error)
       setState({ 
