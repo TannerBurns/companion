@@ -170,7 +170,7 @@ export function UpdateNotification() {
               Download and install it to get the latest features and fixes.
             </p>
             <Button 
-              onClick={handleDownloadAndInstall}
+              onClick={() => handleDownloadAndInstall()}
               className="w-full"
               size="sm"
             >
