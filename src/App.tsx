@@ -4,7 +4,7 @@ import { listen } from '@tauri-apps/api/event'
 import { ThemeProvider } from './lib/ThemeProvider'
 import { useAppStore } from './store'
 import { useSyncCompletedListener } from './hooks/useDigest'
-import { Layout, OfflineIndicator } from './components'
+import { Layout, OfflineIndicator, UpdateNotification } from './components'
 import { DailyDigestView, WeeklySummaryView, SettingsView } from './views'
 
 const queryClient = new QueryClient({
@@ -76,6 +76,7 @@ function App() {
           <MainContent />
         </Layout>
         <OfflineIndicator />
+        <UpdateNotification />
       </ThemeProvider>
     </QueryClientProvider>
   )
