@@ -104,7 +104,7 @@ export function UpdateNotification() {
 
   const handleDismiss = () => {
     // Store the dismissed version so new versions can still show notifications
-    if (state.status === 'available' || state.status === 'error') {
+    if (state.status === 'available' || state.status === 'downloading' || state.status === 'error') {
       setDismissedVersion(state.update.version)
     }
   }
