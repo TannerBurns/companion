@@ -33,7 +33,7 @@ function setDismissedVersionStorage(version: string): void {
 export function UpdateNotification() {
   const [state, setState] = useState<UpdateState>({ status: 'idle' })
   // Track the dismissed version in localStorage so it persists across app restarts
-  const [dismissedVersion, setDismissedVersion] = useState<string | null>(getDismissedVersion)
+  const [dismissedVersion, setDismissedVersion] = useState<string | null>(getDismissedVersion())
 
   const checkForUpdates = useCallback(async () => {
     try {
