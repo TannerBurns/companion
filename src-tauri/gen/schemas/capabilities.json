@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"Default capabilities for the Companion app","local":true,"windows":["main"],"permissions":["core:default","core:event:default","notification:default","shell:default"]}}
+{"default":{"identifier":"default","description":"Default capabilities for the Companion app","local":true,"windows":["main"],"permissions":["core:default","core:event:default","notification:default","shell:default","updater:default","process:default"]}}

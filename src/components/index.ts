@@ -14,6 +14,7 @@ export { ContentDetailModal } from './ContentDetailModal'
 // Status components
 export { OfflineIndicator } from './OfflineIndicator'
 export { PipelineStatus } from './PipelineStatus'
+export { UpdateNotification } from './UpdateNotification'
 
 // Integration components
 export { SlackChannelSelector } from './SlackChannelSelector'
