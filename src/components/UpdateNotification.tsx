@@ -9,13 +9,31 @@ type UpdateState =
   | { status: 'checking' }
   | { status: 'available'; update: Update }
   | { status: 'downloading'; progress: number; downloaded: number; contentLength: number | null; update: Update }
-  | { status: 'ready' }
+  | { status: 'ready'; update: Update }
   | { status: 'error'; message: string; update: Update }
+
+const DISMISSED_VERSION_KEY = 'update-notification-dismissed-version'
+
+function getDismissedVersion(): string | null {
+  try {
+    return localStorage.getItem(DISMISSED_VERSION_KEY)
+  } catch {
+    return null
+  }
+}
+
+function setDismissedVersionStorage(version: string): void {
+  try {
+    localStorage.setItem(DISMISSED_VERSION_KEY, version)
+  } catch {
+    // Ignore storage errors
+  }
+}
 
 export function UpdateNotification() {
   const [state, setState] = useState<UpdateState>({ status: 'idle' })
-  // Track the dismissed version, not just a boolean - allows new versions to show
-  const [dismissedVersion, setDismissedVersion] = useState<string | null>(null)
+  // Track the dismissed version in localStorage so it persists across app restarts
+  const [dismissedVersion, setDismissedVersion] = useState<string | null>(getDismissedVersion)
 
   const checkForUpdates = useCallback(async () => {
     try {
@@ -80,7 +98,7 @@ export function UpdateNotification() {
             })
             break
           case 'Finished':
-            setState({ status: 'ready' })
+            setState({ status: 'ready', update })
             break
         }
       })
@@ -104,8 +122,11 @@ export function UpdateNotification() {
 
   const handleDismiss = () => {
     // Store the dismissed version so new versions can still show notifications
-    if (state.status === 'available' || state.status === 'downloading' || state.status === 'error') {
-      setDismissedVersion(state.update.version)
+    // Persisted to localStorage so it survives app restarts
+    if (state.status === 'available' || state.status === 'downloading' || state.status === 'ready' || state.status === 'error') {
+      const version = state.update.version
+      setDismissedVersion(version)
+      setDismissedVersionStorage(version)
     }
   }
 
