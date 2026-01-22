@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { check, type Update } from '@tauri-apps/plugin-updater'
+import { check, type Update, type DownloadEvent } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { Download, RefreshCw, X, CheckCircle } from 'lucide-react'
 import { Button } from './ui'
@@ -67,7 +67,7 @@ export function UpdateNotification() {
     try {
       setState({ status: 'downloading', progress: 0, downloaded: 0, contentLength: null, update })
       
-      await update.downloadAndInstall((event) => {
+      await update.downloadAndInstall((event: DownloadEvent) => {
         switch (event.event) {
           case 'Started':
             setState({ 
@@ -83,16 +83,15 @@ export function UpdateNotification() {
               if (prev.status !== 'downloading') return prev
               
               const newDownloaded = prev.downloaded + event.data.chunkLength
-              const totalLength = prev.contentLength ?? event.data.contentLength
-              const progress = totalLength 
-                ? Math.round((newDownloaded / totalLength) * 100)
+              const progress = prev.contentLength 
+                ? Math.round((newDownloaded / prev.contentLength) * 100)
                 : 0
               
               return { 
                 status: 'downloading', 
                 progress: Math.min(progress, 100), 
                 downloaded: newDownloaded,
-                contentLength: totalLength ?? null,
+                contentLength: prev.contentLength,
                 update 
               }
             })
