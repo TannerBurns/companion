@@ -8,13 +8,14 @@ type UpdateState =
   | { status: 'idle' }
   | { status: 'checking' }
   | { status: 'available'; update: Update }
-  | { status: 'downloading'; progress: number; update: Update }
+  | { status: 'downloading'; progress: number; downloaded: number; contentLength: number | null; update: Update }
   | { status: 'ready' }
   | { status: 'error'; message: string; update: Update }
 
 export function UpdateNotification() {
   const [state, setState] = useState<UpdateState>({ status: 'idle' })
-  const [dismissed, setDismissed] = useState(false)
+  // Track the dismissed version, not just a boolean - allows new versions to show
+  const [dismissedVersion, setDismissedVersion] = useState<string | null>(null)
 
   const checkForUpdates = useCallback(async () => {
     try {
@@ -46,22 +47,37 @@ export function UpdateNotification() {
     if (!update) return
     
     try {
-      setState({ status: 'downloading', progress: 0, update })
+      setState({ status: 'downloading', progress: 0, downloaded: 0, contentLength: null, update })
       
       await update.downloadAndInstall((event) => {
         switch (event.event) {
           case 'Started':
-            setState({ status: 'downloading', progress: 0, update })
+            setState({ 
+              status: 'downloading', 
+              progress: 0, 
+              downloaded: 0, 
+              contentLength: event.data.contentLength ?? null, 
+              update 
+            })
             break
           case 'Progress':
-            if (event.data.contentLength) {
-              const progress = Math.round((event.data.chunkLength / event.data.contentLength) * 100)
-              setState((prev) => 
-                prev.status === 'downloading' 
-                  ? { status: 'downloading', progress: Math.min(prev.progress + progress, 100), update }
-                  : prev
-              )
-            }
+            setState((prev) => {
+              if (prev.status !== 'downloading') return prev
+              
+              const newDownloaded = prev.downloaded + event.data.chunkLength
+              const totalLength = prev.contentLength ?? event.data.contentLength
+              const progress = totalLength 
+                ? Math.round((newDownloaded / totalLength) * 100)
+                : 0
+              
+              return { 
+                status: 'downloading', 
+                progress: Math.min(progress, 100), 
+                downloaded: newDownloaded,
+                contentLength: totalLength ?? null,
+                update 
+              }
+            })
             break
           case 'Finished':
             setState({ status: 'ready' })
@@ -89,11 +105,20 @@ export function UpdateNotification() {
   }
 
   const handleDismiss = () => {
-    setDismissed(true)
+    // Store the dismissed version so new versions can still show notifications
+    if (state.status === 'available' || state.status === 'error') {
+      setDismissedVersion(state.update.version)
+    }
   }
 
-  // Don't render if dismissed or nothing to show
-  if (dismissed || state.status === 'idle' || state.status === 'checking') {
+  // Don't render if nothing to show
+  if (state.status === 'idle' || state.status === 'checking') {
+    return null
+  }
+
+  // Don't render if this specific version was dismissed
+  const currentVersion = 'update' in state ? state.update.version : null
+  if (currentVersion && dismissedVersion === currentVersion) {
     return null
   }
 
