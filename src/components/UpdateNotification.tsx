@@ -128,6 +128,8 @@ export function UpdateNotification() {
       setDismissedVersion(version)
       setDismissedVersionStorage(version)
     }
+    // Reset internal state to match visible state (nothing shown)
+    setState({ status: 'idle' })
   }
 
   // Don't render if nothing to show
