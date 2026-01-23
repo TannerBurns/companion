@@ -15,7 +15,7 @@ export type LocalActivityStatus = 'running' | 'completed' | 'failed'
 
 export interface LocalActivity {
   id: string
-  type: 'pdf_export'
+  type: 'pdf_export' | 'markdown_export'
   message: string
   status: LocalActivityStatus
   startedAt: number

@@ -1,11 +1,12 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { format, subDays, addDays, isToday, isFuture } from 'date-fns'
-import { ChevronLeft, ChevronRight, Calendar, Download } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react'
 import { useDailyDigest } from '../hooks/useDigest'
-import { ContentCard, ContentDetailModal } from '../components'
+import { ContentCard, ContentDetailModal, ExportMenu } from '../components'
 import { Button } from '../components/ui/Button'
 import { useAppStore } from '../store'
 import { exportDigestPDF } from '../lib/pdf'
+import { exportDigestMarkdown } from '../lib/markdown'
 import type { DigestItem } from '../lib/api'
 
 const CATEGORIES = ['all', 'engineering', 'product', 'sales', 'marketing', 'research', 'other'] as const
@@ -22,14 +23,16 @@ export function DailyDigestView() {
   const timezoneOffset = date.getTimezoneOffset()
   const { data, isLoading, error } = useDailyDigest(dateStr, timezoneOffset)
 
-  const filteredItems = data?.items.filter(
-    item => filter === 'all' || item.category.toLowerCase() === filter
-  ) ?? []
+  const filteredItems = useMemo(() => {
+    const items = data?.items ?? []
+    if (filter === 'all') return items
+    return items.filter(item => item.category.toLowerCase() === filter)
+  }, [data?.items, filter])
 
   const canGoForward = !isToday(date) && !isFuture(date)
 
   const handleExportPDF = useCallback(async () => {
-    if (!data || data.items.length === 0) return
+    if (!data || filteredItems.length === 0) return
     setIsExporting(true)
     
     const dateLabel = format(date, 'MMMM d, yyyy')
@@ -40,8 +43,16 @@ export function DailyDigestView() {
     })
     
     try {
+      // Create a filtered digest to export only visible items
+      const filteredDigest = {
+        ...data,
+        items: filteredItems,
+        categories: data.categories.filter(cat =>
+          filteredItems.some(item => item.category.toLowerCase() === cat.name.toLowerCase())
+        ),
+      }
       await exportDigestPDF({
-        digest: data,
+        digest: filteredDigest,
         type: 'daily',
         dateLabel,
       })
@@ -58,7 +69,47 @@ export function DailyDigestView() {
     } finally {
       setIsExporting(false)
     }
-  }, [data, date, addLocalActivity, updateLocalActivity])
+  }, [data, filteredItems, date, addLocalActivity, updateLocalActivity])
+
+  const handleExportMarkdown = useCallback(async () => {
+    if (!data || filteredItems.length === 0) return
+    setIsExporting(true)
+    
+    const dateLabel = format(date, 'MMMM d, yyyy')
+    const activityId = addLocalActivity({
+      type: 'markdown_export',
+      message: `Daily Digest - ${dateLabel}`,
+      status: 'running',
+    })
+    
+    try {
+      // Create a filtered digest to export only visible items
+      const filteredDigest = {
+        ...data,
+        items: filteredItems,
+        categories: data.categories.filter(cat =>
+          filteredItems.some(item => item.category.toLowerCase() === cat.name.toLowerCase())
+        ),
+      }
+      await exportDigestMarkdown({
+        digest: filteredDigest,
+        type: 'daily',
+        dateLabel,
+      })
+      updateLocalActivity(activityId, {
+        status: 'completed',
+        message: `Daily Digest - ${dateLabel}`,
+      })
+    } catch (error) {
+      console.error('Failed to export Markdown:', error)
+      updateLocalActivity(activityId, {
+        status: 'failed',
+        error: error instanceof Error ? error.message : 'Export failed',
+      })
+    } finally {
+      setIsExporting(false)
+    }
+  }, [data, filteredItems, date, addLocalActivity, updateLocalActivity])
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -91,16 +142,12 @@ export function DailyDigestView() {
           </button>
         </div>
         <div className="w-24 flex justify-end">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleExportPDF}
-            disabled={isLoading || isExporting || !data || data.items.length === 0}
-            aria-label="Export as PDF"
-          >
-            <Download className="h-4 w-4 mr-1.5" />
-            {isExporting ? 'Exporting...' : 'PDF'}
-          </Button>
+          <ExportMenu
+            onExportPDF={handleExportPDF}
+            onExportMarkdown={handleExportMarkdown}
+            disabled={isLoading || filteredItems.length === 0}
+            isExporting={isExporting}
+          />
         </div>
       </div>
 

@@ -18,3 +18,6 @@ export { UpdateNotification } from './UpdateNotification'
 
 // Integration components
 export { SlackChannelSelector } from './SlackChannelSelector'
+
+// Export components
+export { ExportMenu } from './ExportMenu'
