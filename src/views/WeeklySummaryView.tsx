@@ -8,12 +8,13 @@ import {
   eachDayOfInterval,
   isSameDay,
 } from 'date-fns'
-import { ChevronLeft, ChevronRight, Calendar, Download } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react'
 import { useWeeklyDigest } from '../hooks/useDigest'
-import { ContentCard, ContentDetailModal } from '../components'
+import { ContentCard, ContentDetailModal, ExportMenu } from '../components'
 import { Button } from '../components/ui/Button'
 import { useAppStore } from '../store'
 import { exportDigestPDF, type PDFDayGroup } from '../lib/pdf'
+import { exportDigestMarkdown, type DayGroup as MarkdownDayGroup } from '../lib/markdown'
 import type { DigestItem } from '../lib/api'
 
 const CATEGORIES = ['all', 'engineering', 'product', 'sales', 'marketing', 'research', 'other'] as const
@@ -101,6 +102,45 @@ export function WeeklySummaryView() {
     }
   }, [data, weekStart, weekEnd, dayGroups, addLocalActivity, updateLocalActivity])
 
+  const handleExportMarkdown = useCallback(async () => {
+    if (!data || data.items.length === 0) return
+    setIsExporting(true)
+    
+    const dateLabel = `${format(weekStart, 'MMM d')} - ${format(weekEnd, 'MMM d, yyyy')}`
+    const activityId = addLocalActivity({
+      type: 'markdown_export',
+      message: `Weekly Summary - ${dateLabel}`,
+      status: 'running',
+    })
+    
+    try {
+      const markdownDayGroups: MarkdownDayGroup[] = dayGroups.map(group => ({
+        date: group.date,
+        dateLabel: format(group.date, 'EEEE, MMMM d'),
+        items: group.items,
+      }))
+
+      await exportDigestMarkdown({
+        digest: data,
+        type: 'weekly',
+        dateLabel,
+        dayGroups: markdownDayGroups,
+      })
+      updateLocalActivity(activityId, {
+        status: 'completed',
+        message: `Weekly Summary - ${dateLabel}`,
+      })
+    } catch (error) {
+      console.error('Failed to export Markdown:', error)
+      updateLocalActivity(activityId, {
+        status: 'failed',
+        error: error instanceof Error ? error.message : 'Export failed',
+      })
+    } finally {
+      setIsExporting(false)
+    }
+  }, [data, weekStart, weekEnd, dayGroups, addLocalActivity, updateLocalActivity])
+
   return (
     <div className="mx-auto max-w-4xl">
       {/* Header */}
@@ -131,16 +171,12 @@ export function WeeklySummaryView() {
           </button>
         </div>
         <div className="w-24 flex justify-end">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleExportPDF}
-            disabled={isLoading || isExporting || !data || data.items.length === 0}
-            aria-label="Export as PDF"
-          >
-            <Download className="h-4 w-4 mr-1.5" />
-            {isExporting ? 'Exporting...' : 'PDF'}
-          </Button>
+          <ExportMenu
+            onExportPDF={handleExportPDF}
+            onExportMarkdown={handleExportMarkdown}
+            disabled={isLoading || !data || data.items.length === 0}
+            isExporting={isExporting}
+          />
         </div>
       </div>
 
