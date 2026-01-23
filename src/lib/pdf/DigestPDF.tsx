@@ -303,12 +303,24 @@ interface DigestPDFProps {
 
 export function DigestPDF({ digest, type, dateLabel, dayGroups }: DigestPDFProps) {
   const title = type === 'daily' ? 'Daily Digest' : 'Weekly Summary'
-  const itemCount = digest.items.length
 
-  const categoryCounts = digest.categories.map(cat => ({
-    name: cat.name,
-    count: cat.count,
-  }))
+  // When dayGroups are provided, use those items for counts and categories
+  // to ensure consistency when a filter is applied
+  const exportedItems = dayGroups && dayGroups.length > 0
+    ? dayGroups.flatMap(g => g.items)
+    : digest.items
+  const itemCount = exportedItems.length
+
+  // Calculate category counts from the actual exported items
+  const categoryCounts: Array<{ name: string; count: number }> = []
+  const categoryMap = new Map<string, number>()
+  for (const item of exportedItems) {
+    const cat = item.category
+    categoryMap.set(cat, (categoryMap.get(cat) || 0) + 1)
+  }
+  for (const [name, count] of categoryMap) {
+    categoryCounts.push({ name, count })
+  }
 
   return (
     <Document>
