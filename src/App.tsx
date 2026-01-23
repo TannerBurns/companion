@@ -32,31 +32,44 @@ function MainContent() {
 }
 
 function TrayEventHandler() {
-  const { setView } = useAppStore()
+  const { setView, setSettingsSection } = useAppStore()
 
   useEffect(() => {
-    let unlistenFn: (() => void) | undefined
+    let unlistenSettings: (() => void) | undefined
+    let unlistenUpdates: (() => void) | undefined
     let mounted = true
 
     listen('tray:open-settings', () => {
       setView('settings')
     }).then((fn) => {
       if (mounted) {
-        unlistenFn = fn
+        unlistenSettings = fn
       } else {
-        // Component unmounted before promise resolved, clean up immediately
         fn()
       }
     }).catch((err) => {
-      // Gracefully handle listener setup failure (e.g., running in browser without Tauri)
-      console.warn('Failed to set up tray event listener:', err)
+      console.warn('Failed to set up tray:open-settings listener:', err)
+    })
+
+    listen('tray:check-for-updates', () => {
+      setView('settings')
+      setSettingsSection('about')
+    }).then((fn) => {
+      if (mounted) {
+        unlistenUpdates = fn
+      } else {
+        fn()
+      }
+    }).catch((err) => {
+      console.warn('Failed to set up tray:check-for-updates listener:', err)
     })
 
     return () => {
       mounted = false
-      unlistenFn?.()
+      unlistenSettings?.()
+      unlistenUpdates?.()
     }
-  }, [setView])
+  }, [setView, setSettingsSection])
 
   return null
 }
