@@ -57,9 +57,10 @@ function formatItem(item: DigestItem): string {
 function formatDailyDigest(options: ExportMarkdownOptions): string {
   const { digest, dateLabel } = options
   const lines: string[] = []
+  const itemCount = digest.items.length
 
   lines.push('# Daily Digest')
-  lines.push(`**${dateLabel}** - ${digest.items.length} items`)
+  lines.push(`**${dateLabel}** - ${itemCount} ${itemCount === 1 ? 'item' : 'items'}`)
   lines.push('')
 
   if (digest.categories.length > 0) {
@@ -86,14 +87,28 @@ function formatWeeklyDigest(options: ExportMarkdownOptions): string {
   const { digest, dateLabel, dayGroups } = options
   const lines: string[] = []
 
+  // When dayGroups are provided, use those items for counts and categories
+  // to ensure consistency when a filter is applied
+  const exportedItems = dayGroups && dayGroups.length > 0
+    ? dayGroups.flatMap(g => g.items)
+    : digest.items
+  const itemCount = exportedItems.length
+
   lines.push('# Weekly Summary')
-  lines.push(`**${dateLabel}** - ${digest.items.length} items`)
+  lines.push(`**${dateLabel}** - ${itemCount} ${itemCount === 1 ? 'item' : 'items'}`)
   lines.push('')
 
-  if (digest.categories.length > 0) {
+  // Calculate category counts from the actual exported items
+  const categoryCounts = new Map<string, number>()
+  for (const item of exportedItems) {
+    const cat = item.category
+    categoryCounts.set(cat, (categoryCounts.get(cat) || 0) + 1)
+  }
+
+  if (categoryCounts.size > 0) {
     lines.push('## Categories')
-    for (const cat of digest.categories) {
-      lines.push(`- ${formatCategory(cat.name)}: ${cat.count}`)
+    for (const [name, count] of categoryCounts) {
+      lines.push(`- ${formatCategory(name)}: ${count}`)
     }
     lines.push('')
   }

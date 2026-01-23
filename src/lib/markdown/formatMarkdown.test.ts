@@ -35,7 +35,7 @@ describe('formatDigestMarkdown', () => {
       })
 
       expect(result).toContain('# Daily Digest')
-      expect(result).toContain('**January 15, 2024** - 1 items')
+      expect(result).toContain('**January 15, 2024** - 1 item')
     })
 
     it('includes category summary when categories exist', () => {
@@ -92,7 +92,7 @@ describe('formatDigestMarkdown', () => {
       })
 
       expect(result).toContain('# Weekly Summary')
-      expect(result).toContain('**Jan 15 - Jan 21, 2024** - 1 items')
+      expect(result).toContain('**Jan 15 - Jan 21, 2024** - 1 item')
     })
 
     it('groups items by day when dayGroups provided', () => {
@@ -160,6 +160,49 @@ describe('formatDigestMarkdown', () => {
       expect(result).toContain('Item A')
       expect(result).toContain('Item B')
       expect(result).not.toMatch(/# (Monday|Tuesday|Wednesday)/)
+    })
+
+    it('uses category counts from dayGroups items when filter applied', () => {
+      // Simulate a filter being applied: digest has items from multiple categories,
+      // but dayGroups only contains the filtered subset
+      const dayGroups: DayGroup[] = [
+        {
+          date: new Date('2024-01-15'),
+          dateLabel: 'Monday, January 15',
+          items: [
+            createItem({ id: '1', title: 'Engineering Item 1', category: 'engineering' }),
+            createItem({ id: '2', title: 'Engineering Item 2', category: 'engineering' }),
+          ],
+        },
+      ]
+
+      const result = formatDigestMarkdown({
+        digest: createDigest({
+          // Original digest has 4 items across multiple categories
+          items: [
+            createItem({ id: '1', category: 'engineering' }),
+            createItem({ id: '2', category: 'engineering' }),
+            createItem({ id: '3', category: 'product' }),
+            createItem({ id: '4', category: 'sales' }),
+          ],
+          categories: [
+            { name: 'engineering', count: 2, topItems: [] },
+            { name: 'product', count: 1, topItems: [] },
+            { name: 'sales', count: 1, topItems: [] },
+          ],
+        }),
+        type: 'weekly',
+        dateLabel: 'Jan 15 - Jan 21, 2024',
+        dayGroups,
+      })
+
+      // Should use item count from dayGroups (2), not digest (4)
+      expect(result).toContain('**Jan 15 - Jan 21, 2024** - 2 items')
+      // Should only include category from filtered items
+      expect(result).toContain('- Engineering: 2')
+      // Should NOT include categories not in the filtered dayGroups
+      expect(result).not.toContain('- Product:')
+      expect(result).not.toContain('- Sales:')
     })
   })
 
