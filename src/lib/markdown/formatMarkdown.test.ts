@@ -41,6 +41,13 @@ describe('formatDigestMarkdown', () => {
     it('includes category summary when categories exist', () => {
       const result = formatDigestMarkdown({
         digest: createDigest({
+          items: [
+            createItem({ id: '1', category: 'engineering' }),
+            createItem({ id: '2', category: 'engineering' }),
+            createItem({ id: '3', category: 'product' }),
+            createItem({ id: '4', category: 'product' }),
+            createItem({ id: '5', category: 'product' }),
+          ],
           categories: [
             { name: 'engineering', count: 2, topItems: [] },
             { name: 'product', count: 3, topItems: [] },
@@ -55,9 +62,35 @@ describe('formatDigestMarkdown', () => {
       expect(result).toContain('- Product: 3')
     })
 
-    it('omits category section when no categories', () => {
+    it('uses category counts from items when filter applied', () => {
+      // Simulate a filter being applied: digest.categories has stale counts
+      // but digest.items contains only the filtered subset
       const result = formatDigestMarkdown({
-        digest: createDigest({ categories: [] }),
+        digest: createDigest({
+          // After filtering, only 3 engineering items are in the digest
+          items: [
+            createItem({ id: '1', title: 'Engineering Item 1', category: 'engineering' }),
+            createItem({ id: '2', title: 'Engineering Item 2', category: 'engineering' }),
+            createItem({ id: '3', title: 'Engineering Item 3', category: 'engineering' }),
+          ],
+          // Original categories had higher counts before filtering
+          categories: [
+            { name: 'engineering', count: 10, topItems: [] },
+          ],
+        }),
+        type: 'daily',
+        dateLabel: 'January 15, 2024',
+      })
+
+      // Should use count from actual items (3), not stale category count (10)
+      expect(result).toContain('**January 15, 2024** - 3 items')
+      expect(result).toContain('- Engineering: 3')
+      expect(result).not.toContain('- Engineering: 10')
+    })
+
+    it('omits category section when no items', () => {
+      const result = formatDigestMarkdown({
+        digest: createDigest({ items: [], categories: [] }),
         type: 'daily',
         dateLabel: 'January 15, 2024',
       })

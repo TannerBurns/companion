@@ -63,10 +63,18 @@ function formatDailyDigest(options: ExportMarkdownOptions): string {
   lines.push(`**${dateLabel}** - ${itemCount} ${itemCount === 1 ? 'item' : 'items'}`)
   lines.push('')
 
-  if (digest.categories.length > 0) {
+  // Calculate category counts from the actual exported items
+  // to ensure consistency when a filter is applied
+  const categoryCounts = new Map<string, number>()
+  for (const item of digest.items) {
+    const cat = item.category
+    categoryCounts.set(cat, (categoryCounts.get(cat) || 0) + 1)
+  }
+
+  if (categoryCounts.size > 0) {
     lines.push('## Categories')
-    for (const cat of digest.categories) {
-      lines.push(`- ${formatCategory(cat.name)}: ${cat.count}`)
+    for (const [name, count] of categoryCounts) {
+      lines.push(`- ${formatCategory(name)}: ${count}`)
     }
     lines.push('')
   }
