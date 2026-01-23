@@ -24,9 +24,9 @@ export function DailyDigestView() {
   const { data, isLoading, error } = useDailyDigest(dateStr, timezoneOffset)
 
   const filteredItems = useMemo(() => {
-    return data?.items.filter(
-      item => filter === 'all' || item.category.toLowerCase() === filter
-    ) ?? []
+    const items = data?.items ?? []
+    if (filter === 'all') return items
+    return items.filter(item => item.category.toLowerCase() === filter)
   }, [data?.items, filter])
 
   const canGoForward = !isToday(date) && !isFuture(date)

@@ -64,7 +64,7 @@ export function WeeklySummaryView() {
   const totalItems = filteredItems.length
 
   const handleExportPDF = useCallback(async () => {
-    if (!data || data.items.length === 0) return
+    if (!data || filteredItems.length === 0) return
     setIsExporting(true)
     
     const dateLabel = `${format(weekStart, 'MMM d')} - ${format(weekEnd, 'MMM d, yyyy')}`
@@ -100,10 +100,10 @@ export function WeeklySummaryView() {
     } finally {
       setIsExporting(false)
     }
-  }, [data, weekStart, weekEnd, dayGroups, addLocalActivity, updateLocalActivity])
+  }, [data, filteredItems, weekStart, weekEnd, dayGroups, addLocalActivity, updateLocalActivity])
 
   const handleExportMarkdown = useCallback(async () => {
-    if (!data || data.items.length === 0) return
+    if (!data || filteredItems.length === 0) return
     setIsExporting(true)
     
     const dateLabel = `${format(weekStart, 'MMM d')} - ${format(weekEnd, 'MMM d, yyyy')}`
@@ -139,7 +139,7 @@ export function WeeklySummaryView() {
     } finally {
       setIsExporting(false)
     }
-  }, [data, weekStart, weekEnd, dayGroups, addLocalActivity, updateLocalActivity])
+  }, [data, filteredItems, weekStart, weekEnd, dayGroups, addLocalActivity, updateLocalActivity])
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -174,7 +174,7 @@ export function WeeklySummaryView() {
           <ExportMenu
             onExportPDF={handleExportPDF}
             onExportMarkdown={handleExportMarkdown}
-            disabled={isLoading || !data || data.items.length === 0}
+            disabled={isLoading || filteredItems.length === 0}
             isExporting={isExporting}
           />
         </div>
