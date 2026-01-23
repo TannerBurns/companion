@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { format, subDays, addDays, isToday, isFuture } from 'date-fns'
 import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react'
 import { useDailyDigest } from '../hooks/useDigest'
@@ -23,14 +23,16 @@ export function DailyDigestView() {
   const timezoneOffset = date.getTimezoneOffset()
   const { data, isLoading, error } = useDailyDigest(dateStr, timezoneOffset)
 
-  const filteredItems = data?.items.filter(
-    item => filter === 'all' || item.category.toLowerCase() === filter
-  ) ?? []
+  const filteredItems = useMemo(() => {
+    return data?.items.filter(
+      item => filter === 'all' || item.category.toLowerCase() === filter
+    ) ?? []
+  }, [data?.items, filter])
 
   const canGoForward = !isToday(date) && !isFuture(date)
 
   const handleExportPDF = useCallback(async () => {
-    if (!data || data.items.length === 0) return
+    if (!data || filteredItems.length === 0) return
     setIsExporting(true)
     
     const dateLabel = format(date, 'MMMM d, yyyy')
@@ -41,8 +43,16 @@ export function DailyDigestView() {
     })
     
     try {
+      // Create a filtered digest to export only visible items
+      const filteredDigest = {
+        ...data,
+        items: filteredItems,
+        categories: data.categories.filter(cat =>
+          filteredItems.some(item => item.category.toLowerCase() === cat.name.toLowerCase())
+        ),
+      }
       await exportDigestPDF({
-        digest: data,
+        digest: filteredDigest,
         type: 'daily',
         dateLabel,
       })
@@ -59,10 +69,10 @@ export function DailyDigestView() {
     } finally {
       setIsExporting(false)
     }
-  }, [data, date, addLocalActivity, updateLocalActivity])
+  }, [data, filteredItems, date, addLocalActivity, updateLocalActivity])
 
   const handleExportMarkdown = useCallback(async () => {
-    if (!data || data.items.length === 0) return
+    if (!data || filteredItems.length === 0) return
     setIsExporting(true)
     
     const dateLabel = format(date, 'MMMM d, yyyy')
@@ -73,8 +83,16 @@ export function DailyDigestView() {
     })
     
     try {
+      // Create a filtered digest to export only visible items
+      const filteredDigest = {
+        ...data,
+        items: filteredItems,
+        categories: data.categories.filter(cat =>
+          filteredItems.some(item => item.category.toLowerCase() === cat.name.toLowerCase())
+        ),
+      }
       await exportDigestMarkdown({
-        digest: data,
+        digest: filteredDigest,
         type: 'daily',
         dateLabel,
       })
@@ -91,7 +109,7 @@ export function DailyDigestView() {
     } finally {
       setIsExporting(false)
     }
-  }, [data, date, addLocalActivity, updateLocalActivity])
+  }, [data, filteredItems, date, addLocalActivity, updateLocalActivity])
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -127,7 +145,7 @@ export function DailyDigestView() {
           <ExportMenu
             onExportPDF={handleExportPDF}
             onExportMarkdown={handleExportMarkdown}
-            disabled={isLoading || !data || data.items.length === 0}
+            disabled={isLoading || filteredItems.length === 0}
             isExporting={isExporting}
           />
         </div>
