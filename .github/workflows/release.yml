@@ -126,8 +126,19 @@ jobs:
       - name: Update version from tag
         shell: bash
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          echo "Setting version to: $VERSION"
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          
+          # Convert pre-release versions to semver + MSI compatible format
+          # e.g., 1.0.0-beta.8 -> 1.0.8 (uses major.minor.prerelease-number)
+          # This satisfies both semver (X.Y.Z) and Windows MSI (numeric only)
+          if [[ "$TAG_VERSION" =~ ^([0-9]+)\.([0-9]+)\.[0-9]+-(alpha|beta|rc)\.([0-9]+)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[4]}"
+          else
+            VERSION="$TAG_VERSION"
+          fi
+          
+          echo "Tag version: $TAG_VERSION"
+          echo "Build version: $VERSION"
           
           if command -v jq &> /dev/null; then
             jq --arg v "$VERSION" '.version = $v' src-tauri/tauri.conf.json > tmp.json && mv tmp.json src-tauri/tauri.conf.json
