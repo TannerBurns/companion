@@ -66,6 +66,7 @@ fn build_tray_menu(
     let is_syncing = pipeline_state.map(|s| s.is_busy).unwrap_or(false);
     let sync_label = if is_syncing { "⟳ Syncing..." } else { "Sync Now" };
     let sync_now = MenuItem::with_id(app, "sync", sync_label, !is_syncing, None::<&str>)?;
+    let check_updates = MenuItem::with_id(app, "check_updates", "Check for Updates", true, None::<&str>)?;
     let separator1 = PredefinedMenuItem::separator(app)?;
     let activity_submenu = build_activity_submenu(app, pipeline_state)?;
     
@@ -78,6 +79,7 @@ fn build_tray_menu(
             &show_window,
             &open_settings,
             &sync_now,
+            &check_updates,
             &separator1,
             &activity_submenu,
             &separator2,
@@ -148,6 +150,10 @@ fn handle_menu_event(app: &AppHandle, event_id: &str) {
         }
         "sync" => {
             let _ = app.emit("tray:sync-requested", ());
+        }
+        "check_updates" => {
+            show_main_window(app);
+            let _ = app.emit("tray:check-for-updates", ());
         }
         "quit" => app.exit(0),
         _ => {}

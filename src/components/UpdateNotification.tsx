@@ -1,55 +1,17 @@
-import { useState, useEffect, useCallback } from 'react'
-import { check, type Update, type DownloadEvent } from '@tauri-apps/plugin-updater'
-import { relaunch } from '@tauri-apps/plugin-process'
+import { useEffect } from 'react'
 import { Download, RefreshCw, X, CheckCircle } from 'lucide-react'
 import { Button } from './ui'
-
-type UpdateState = 
-  | { status: 'idle' }
-  | { status: 'checking' }
-  | { status: 'available'; update: Update }
-  | { status: 'downloading'; progress: number; downloaded: number; contentLength: number | null; update: Update }
-  | { status: 'ready'; update: Update }
-  | { status: 'error'; message: string; update: Update }
-
-const DISMISSED_VERSION_KEY = 'update-notification-dismissed-version'
-
-function getDismissedVersion(): string | null {
-  try {
-    return localStorage.getItem(DISMISSED_VERSION_KEY)
-  } catch {
-    return null
-  }
-}
-
-function setDismissedVersionStorage(version: string): void {
-  try {
-    localStorage.setItem(DISMISSED_VERSION_KEY, version)
-  } catch {
-    // Ignore storage errors
-  }
-}
+import { useUpdater } from '../hooks/useUpdater'
 
 export function UpdateNotification() {
-  const [state, setState] = useState<UpdateState>({ status: 'idle' })
-  // Track the dismissed version in localStorage so it persists across app restarts
-  const [dismissedVersion, setDismissedVersion] = useState<string | null>(getDismissedVersion())
-
-  const checkForUpdates = useCallback(async () => {
-    try {
-      setState({ status: 'checking' })
-      const update = await check()
-      
-      if (update) {
-        setState({ status: 'available', update })
-      } else {
-        setState({ status: 'idle' })
-      }
-    } catch (error) {
-      console.error('Failed to check for updates:', error)
-      setState({ status: 'idle' })
-    }
-  }, [])
+  const { 
+    state, 
+    checkForUpdates, 
+    downloadAndInstall, 
+    handleRestart, 
+    dismiss, 
+    isDismissed 
+  } = useUpdater()
 
   useEffect(() => {
     // Check for updates on mount, with a small delay to not block app startup
@@ -60,85 +22,15 @@ export function UpdateNotification() {
     return () => clearTimeout(timer)
   }, [checkForUpdates])
 
-  const handleDownloadAndInstall = async (updateToInstall?: Update) => {
-    const update = updateToInstall ?? (state.status === 'available' ? state.update : state.status === 'error' ? state.update : null)
-    if (!update) return
-    
-    try {
-      setState({ status: 'downloading', progress: 0, downloaded: 0, contentLength: null, update })
-      
-      await update.downloadAndInstall((event: DownloadEvent) => {
-        switch (event.event) {
-          case 'Started':
-            setState({ 
-              status: 'downloading', 
-              progress: 0, 
-              downloaded: 0, 
-              contentLength: event.data.contentLength ?? null, 
-              update 
-            })
-            break
-          case 'Progress':
-            setState((prev) => {
-              if (prev.status !== 'downloading') return prev
-              
-              const newDownloaded = prev.downloaded + event.data.chunkLength
-              const progress = prev.contentLength 
-                ? Math.round((newDownloaded / prev.contentLength) * 100)
-                : 0
-              
-              return { 
-                status: 'downloading', 
-                progress: Math.min(progress, 100), 
-                downloaded: newDownloaded,
-                contentLength: prev.contentLength,
-                update 
-              }
-            })
-            break
-          case 'Finished':
-            setState({ status: 'ready', update })
-            break
-        }
-      })
-    } catch (error) {
-      console.error('Failed to download update:', error)
-      setState({ 
-        status: 'error', 
-        message: error instanceof Error ? error.message : 'Failed to download update',
-        update
-      })
-    }
-  }
-
-  const handleRestart = async () => {
-    try {
-      await relaunch()
-    } catch (error) {
-      console.error('Failed to relaunch:', error)
-    }
-  }
-
-  const handleDismiss = () => {
-    // Store the dismissed version so new versions can still show notifications
-    // Persisted to localStorage so it survives app restarts
-    if (state.status === 'available' || state.status === 'downloading' || state.status === 'ready' || state.status === 'error') {
-      const version = state.update.version
-      setDismissedVersion(version)
-      setDismissedVersionStorage(version)
-    }
-    // Reset internal state to match visible state (nothing shown)
-    setState({ status: 'idle' })
-  }
-
-  // Don't render if nothing to show
-  if (state.status === 'idle' || state.status === 'checking') {
+  if (state.status === 'idle' || state.status === 'checking' || state.status === 'no-update') {
     return null
   }
 
-  // Don't render if this specific version was dismissed
-  const currentVersion = 'update' in state ? state.update.version : null
-  if (currentVersion && dismissedVersion === currentVersion) {
+  if (state.status === 'error' && !state.update) {
+    return null
+  }
+
+  if (isDismissed) {
     return null
   }
 
@@ -152,7 +44,7 @@ export function UpdateNotification() {
         </div>
         {state.status !== 'ready' && (
           <button
-            onClick={handleDismiss}
+            onClick={dismiss}
             className="p-1 hover:bg-primary-600 rounded transition-colors"
             aria-label="Dismiss"
           >
@@ -170,7 +62,7 @@ export function UpdateNotification() {
               Download and install it to get the latest features and fixes.
             </p>
             <Button 
-              onClick={() => handleDownloadAndInstall()}
+              onClick={() => downloadAndInstall()}
               className="w-full"
               size="sm"
             >
@@ -223,7 +115,7 @@ export function UpdateNotification() {
               {state.message}
             </p>
             <Button 
-              onClick={() => handleDownloadAndInstall(state.update)}
+              onClick={() => downloadAndInstall(state.update)}
               variant="outline"
               className="w-full"
               size="sm"

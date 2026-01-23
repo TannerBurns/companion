@@ -4,6 +4,7 @@ export { useConnectionStatus } from './useConnectionStatus'
 export { useNotifications } from './useNotifications'
 export { usePipeline, getTaskDisplayName, getTaskIcon } from './usePipeline'
 export { useAnalytics } from './useAnalytics'
+export { useUpdater } from './useUpdater'
 
 export type {
   DigestNotification,
@@ -11,3 +12,4 @@ export type {
   SyncCompleteNotification,
 } from './useNotifications'
 export type { PipelineTask, PipelineState, PipelineTaskType, TaskStatus } from './usePipeline'
+export type { UpdateState } from './useUpdater'
