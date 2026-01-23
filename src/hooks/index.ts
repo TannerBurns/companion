@@ -5,6 +5,7 @@ export { useNotifications } from './useNotifications'
 export { usePipeline, getTaskDisplayName, getTaskIcon } from './usePipeline'
 export { useAnalytics } from './useAnalytics'
 export { useUpdater } from './useUpdater'
+export { useSetupStatus } from './useSetupStatus'
 
 export type {
   DigestNotification,
@@ -13,3 +14,4 @@ export type {
 } from './useNotifications'
 export type { PipelineTask, PipelineState, PipelineTaskType, TaskStatus } from './usePipeline'
 export type { UpdateState } from './useUpdater'
+export type { SetupStatus } from './useSetupStatus'

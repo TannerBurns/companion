@@ -74,6 +74,21 @@ describe('useAppStore', () => {
       useAppStore.getState().setSettingsSection('appearance')
       expect(useAppStore.getState().settingsSection).toBe('appearance')
     })
+
+    it('updates settingsSection to data', () => {
+      useAppStore.getState().setSettingsSection('data')
+      expect(useAppStore.getState().settingsSection).toBe('data')
+    })
+
+    it('updates settingsSection to status', () => {
+      useAppStore.getState().setSettingsSection('status')
+      expect(useAppStore.getState().settingsSection).toBe('status')
+    })
+
+    it('updates settingsSection to about', () => {
+      useAppStore.getState().setSettingsSection('about')
+      expect(useAppStore.getState().settingsSection).toBe('about')
+    })
   })
 
   describe('state independence', () => {

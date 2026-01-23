@@ -19,6 +19,7 @@ import { Input } from './ui/Input'
 import { api } from '../lib/api'
 import type { SlackChannel, SlackChannelSelection, SlackUser } from '../lib/api'
 import { useAppStore } from '../store'
+import { usePreferences } from '../hooks/usePreferences'
 
 interface SlackChannelSelectorProps {
   isOpen: boolean
@@ -165,6 +166,7 @@ export function SlackChannelSelector({
   const [collapsedSections, setCollapsedSections] = useState<Set<ChannelType>>(new Set())
   
   const setSlackState = useAppStore((s) => s.setSlackState)
+  const { preferences, save: savePreferences } = usePreferences()
 
   // Load channels and previously selected channels
   useEffect(() => {
@@ -325,6 +327,15 @@ export function SlackChannelSelector({
 
       await api.saveSlackChannels(selections)
       setSlackState({ selectedChannelCount: selections.length })
+      
+      // Auto-enable Slack sync when channels are saved
+      if (!preferences.enabledSources.includes('slack')) {
+        savePreferences({
+          ...preferences,
+          enabledSources: [...preferences.enabledSources, 'slack'],
+        })
+      }
+      
       onSave?.()
       onClose()
     } catch (e) {
