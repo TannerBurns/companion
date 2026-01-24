@@ -219,12 +219,14 @@ describe('countBySource', () => {
       createItem({ source: 'slack' }),
       createItem({ source: 'slack' }),
       createItem({ source: 'confluence' }),
+      createItem({ source: 'ai' }),
     ]
 
     const counts = countBySource(items)
-    expect(counts.all).toBe(3)
+    expect(counts.all).toBe(4)
     expect(counts.slack).toBe(2)
     expect(counts.confluence).toBe(1)
+    expect(counts.ai).toBe(1)
   })
 
   it('handles empty array', () => {
@@ -232,6 +234,7 @@ describe('countBySource', () => {
     expect(counts.all).toBe(0)
     expect(counts.slack).toBe(0)
     expect(counts.confluence).toBe(0)
+    expect(counts.ai).toBe(0)
   })
 
   it('handles single source', () => {
@@ -244,28 +247,34 @@ describe('countBySource', () => {
     expect(counts.all).toBe(2)
     expect(counts.slack).toBe(2)
     expect(counts.confluence).toBe(0)
+    expect(counts.ai).toBe(0)
   })
 })
 
 describe('getAvailableSources', () => {
   it('returns only "all" when no items have sources', () => {
-    const counts = { all: 0, slack: 0, confluence: 0 }
+    const counts = { all: 0, slack: 0, confluence: 0, ai: 0 }
     expect(getAvailableSources(counts)).toEqual(['all'])
   })
 
   it('includes slack when slack has items', () => {
-    const counts = { all: 5, slack: 5, confluence: 0 }
+    const counts = { all: 5, slack: 5, confluence: 0, ai: 0 }
     expect(getAvailableSources(counts)).toEqual(['all', 'slack'])
   })
 
   it('includes confluence when confluence has items', () => {
-    const counts = { all: 3, slack: 0, confluence: 3 }
+    const counts = { all: 3, slack: 0, confluence: 3, ai: 0 }
     expect(getAvailableSources(counts)).toEqual(['all', 'confluence'])
   })
 
-  it('includes both when both have items', () => {
-    const counts = { all: 5, slack: 3, confluence: 2 }
-    expect(getAvailableSources(counts)).toEqual(['all', 'slack', 'confluence'])
+  it('includes ai when ai has items', () => {
+    const counts = { all: 2, slack: 0, confluence: 0, ai: 2 }
+    expect(getAvailableSources(counts)).toEqual(['all', 'ai'])
+  })
+
+  it('includes all sources when all have items', () => {
+    const counts = { all: 6, slack: 3, confluence: 2, ai: 1 }
+    expect(getAvailableSources(counts)).toEqual(['all', 'slack', 'confluence', 'ai'])
   })
 })
 

@@ -1,9 +1,9 @@
-import { Flame, TrendingDown, Minus, Hash, FileText, type LucideIcon } from 'lucide-react'
+import { Flame, TrendingDown, Minus, Hash, FileText, Sparkles, type LucideIcon } from 'lucide-react'
 import type { DigestItem } from './api'
 
 export type ImportanceLevel = 'high' | 'medium' | 'low'
 export type ImportanceFilter = 'all' | ImportanceLevel
-export type SourceFilter = 'all' | 'slack' | 'confluence'
+export type SourceFilter = 'all' | 'slack' | 'confluence' | 'ai'
 
 /** All importance filter options for UI iteration */
 export const IMPORTANCE_LEVELS: readonly ImportanceFilter[] = ['all', 'high', 'medium', 'low'] as const
@@ -24,6 +24,7 @@ export const SOURCE_CONFIG: Record<SourceFilter, { label: string; icon: LucideIc
   all: { label: 'All', icon: null },
   slack: { label: 'Slack', icon: Hash },
   confluence: { label: 'Confluence', icon: FileText },
+  ai: { label: 'AI', icon: Sparkles },
 }
 
 /**
@@ -83,6 +84,7 @@ export function countBySource(items: DigestItem[]): Record<SourceFilter, number>
     all: items.length,
     slack: items.filter(item => item.source === 'slack').length,
     confluence: items.filter(item => item.source === 'confluence').length,
+    ai: items.filter(item => item.source === 'ai').length,
   }
 }
 
@@ -93,6 +95,7 @@ export function getAvailableSources(sourceCounts: Record<SourceFilter, number>):
   const sources: SourceFilter[] = ['all']
   if (sourceCounts.slack > 0) sources.push('slack')
   if (sourceCounts.confluence > 0) sources.push('confluence')
+  if (sourceCounts.ai > 0) sources.push('ai')
   return sources
 }
 

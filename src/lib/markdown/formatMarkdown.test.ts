@@ -243,7 +243,6 @@ describe('formatDigestMarkdown', () => {
     it('formats source labels correctly', () => {
       const sources: Array<{ source: DigestItem['source']; expected: string }> = [
         { source: 'slack', expected: '[Slack]' },
-        { source: 'jira', expected: '[Jira]' },
         { source: 'confluence', expected: '[Confluence]' },
         { source: 'ai', expected: '[AI]' },
       ]

@@ -7,7 +7,7 @@ export interface DigestItem {
   highlights?: string[]
   category: string
   categoryConfidence?: number
-  source: 'slack' | 'jira' | 'confluence' | 'ai'
+  source: 'slack' | 'confluence' | 'ai'
   sourceUrl?: string
   importanceScore: number
   createdAt: number

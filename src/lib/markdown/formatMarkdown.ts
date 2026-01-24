@@ -4,7 +4,6 @@ import type { ExportMarkdownOptions } from './types'
 function formatSource(source: string): string {
   const sourceMap: Record<string, string> = {
     slack: 'Slack',
-    jira: 'Jira',
     confluence: 'Confluence',
     ai: 'AI',
   }
