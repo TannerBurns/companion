@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { ExternalLink, ChevronDown, ChevronUp, Hash, Users, MessageSquare } from 'lucide-react'
+import { ExternalLink, ChevronDown, ChevronUp, Hash, Users, MessageSquare, ArrowRight } from 'lucide-react'
 import { Card } from './ui/Card'
 import { CategoryBadge } from './CategoryBadge'
 import { SourceIcon } from './SourceIcon'
 import { ImportanceIndicator } from './ImportanceIndicator'
+import { openUrl } from '../lib/openUrl'
 import type { DigestItem } from '../lib/api'
 
 interface ContentCardProps {
@@ -114,18 +115,29 @@ export function ContentCard({ item, onViewDetail }: ContentCardProps) {
         )}
 
         <div className="flex items-center gap-2">
-          {item.sourceUrl && (
-            <a
-              href={item.sourceUrl}
-              target="_blank"
-              rel="noopener noreferrer"
+          {(item.channels && item.channels.length > 1) || (item.sourceUrls && item.sourceUrls.length > 1) ? (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onViewDetail?.(item.id)
+              }}
               className="flex items-center gap-1 text-xs text-primary-500 hover:underline"
-              onClick={(e) => e.stopPropagation()}
+            >
+              <ArrowRight className="h-3 w-3" />
+              View Details
+            </button>
+          ) : item.sourceUrls?.[0] || item.sourceUrl ? (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                openUrl(item.sourceUrls?.[0] || item.sourceUrl || '')
+              }}
+              className="flex items-center gap-1 text-xs text-primary-500 hover:underline"
             >
               <ExternalLink className="h-3 w-3" />
-              View Source
-            </a>
-          )}
+              View in Slack
+            </button>
+          ) : null}
         </div>
       </div>
     </Card>

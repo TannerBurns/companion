@@ -36,6 +36,9 @@ pub struct SlackTokens {
     pub team_id: String,
     #[serde(alias = "team_name")]
     pub team_name: String,
+    /// The workspace domain (e.g., "acme-corp" for "https://acme-corp.slack.com/")
+    #[serde(alias = "team_domain", skip_serializing_if = "Option::is_none")]
+    pub team_domain: Option<String>,
     #[serde(alias = "user_id")]
     pub user_id: String,
 }
@@ -120,6 +123,8 @@ pub struct SlackConnectionStatus {
 pub struct SlackAuthInfo {
     pub team_id: String,
     pub team_name: String,
+    /// The workspace domain (e.g., "acme-corp" from "https://acme-corp.slack.com/")
+    pub team_domain: Option<String>,
     pub user_id: String,
     pub user_name: String,
 }
@@ -170,6 +175,7 @@ mod tests {
             scope: "channels:read".into(),
             team_id: "T123".into(),
             team_name: "Test Team".into(),
+            team_domain: Some("test-team".into()),
             user_id: "U123".into(),
         };
         

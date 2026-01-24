@@ -325,17 +325,38 @@ pub async fn sync_slack_now(db: Arc<Database>, crypto: Arc<CryptoService>) -> Re
     let tokens_json = crypto
         .decrypt_string(&encrypted.0)
         .map_err(|e| e.to_string())?;
-    let tokens: SlackTokens = serde_json::from_str(&tokens_json)
+    let mut tokens: SlackTokens = serde_json::from_str(&tokens_json)
         .map_err(|e| e.to_string())?;
     
     tracing::info!("Starting Slack sync for team: {}", tokens.team_name);
     
-    // Create Slack client and sync service with team_id for Enterprise Grid
     let client = SlackClient::new(String::new(), String::new())
-        .with_token(tokens.access_token)
-        .with_team_id(tokens.team_id);
+        .with_token(tokens.access_token.clone())
+        .with_team_id(tokens.team_id.clone());
     
-    let sync_service = SlackSyncService::new(client, db, crypto);
+    // Migrate tokens saved before team_domain was added
+    if tokens.team_domain.is_none() {
+        if let Ok(auth_info) = client.test_auth().await {
+            if let Some(ref domain) = auth_info.team_domain {
+                tokens.team_domain = Some(domain.clone());
+                if let Ok(updated_json) = serde_json::to_string(&tokens) {
+                    if let Ok(encrypted_data) = crypto.encrypt_string(&updated_json) {
+                        let now = chrono::Utc::now().timestamp();
+                        let _ = sqlx::query(
+                            "UPDATE credentials SET encrypted_data = ?, updated_at = ? WHERE id = 'slack'"
+                        )
+                        .bind(&encrypted_data)
+                        .bind(now)
+                        .execute(db.pool())
+                        .await;
+                    }
+                }
+            }
+        }
+    }
+    
+    let sync_service = SlackSyncService::new(client, db.clone(), crypto)
+        .with_team_domain(tokens.team_domain);
     
     let result = sync_service.sync_all().await
         .map_err(|e| e.to_string())?;

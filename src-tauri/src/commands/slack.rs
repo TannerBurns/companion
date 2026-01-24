@@ -63,6 +63,7 @@ pub async fn connect_slack(
         scope: detected_scopes.join(","),
         team_id: auth_info.team_id,
         team_name: auth_info.team_name,
+        team_domain: auth_info.team_domain,
         user_id: auth_info.user_id,
     };
     

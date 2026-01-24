@@ -11,6 +11,8 @@ pub struct DigestItem {
     pub category: String,
     pub source: String,
     pub source_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_urls: Option<Vec<String>>,
     pub importance_score: f64,
     pub created_at: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -121,12 +123,13 @@ pub struct AnalyticsSummary {
 /// Type alias for group row from database
 pub type GroupRow = (String, String, Option<String>, Option<String>, Option<f64>, Option<String>, i64);
 
-/// Parsed entity metadata from AI summaries
 pub struct ParsedEntities {
     pub title: String,
     pub channels: Option<Vec<String>>,
     pub people: Option<Vec<String>>,
     pub message_count: Option<i32>,
+    pub message_ids: Vec<String>,
+    pub key_message_ids: Vec<String>,
 }
 
 impl ParsedEntities {
@@ -147,11 +150,21 @@ impl ParsedEntities {
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .filter(|v: &Vec<String>| !v.is_empty());
         
-        let message_count: Option<i32> = value.get("message_ids")
-            .and_then(|v| v.as_array())
-            .map(|arr| arr.len() as i32);
+        let message_ids: Vec<String> = value.get("message_ids")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default();
         
-        Self { title, channels, people, message_count }
+        let key_message_ids: Vec<String> = value.get("key_message_ids")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default();
+        
+        let message_count: Option<i32> = if message_ids.is_empty() {
+            None
+        } else {
+            Some(message_ids.len() as i32)
+        };
+        
+        Self { title, channels, people, message_count, message_ids, key_message_ids }
     }
 }
 
@@ -169,6 +182,7 @@ mod tests {
             category: "engineering".to_string(),
             source: "slack".to_string(),
             source_url: None,
+            source_urls: Some(vec!["https://slack.com/msg1".to_string(), "https://slack.com/msg2".to_string()]),
             importance_score: 0.8,
             created_at: 1234567890,
             channels: Some(vec!["#general".to_string()]),
@@ -179,6 +193,7 @@ mod tests {
         let json = serde_json::to_string(&item).unwrap();
         assert!(json.contains("\"id\":\"test-1\""));
         assert!(json.contains("\"importanceScore\":0.8"));
+        assert!(json.contains("\"sourceUrls\""));
         // people is None so should not be serialized
         assert!(!json.contains("\"people\""));
     }
@@ -242,7 +257,8 @@ mod tests {
             "topic": "Sprint Planning",
             "channels": ["#engineering", "#product"],
             "people": ["Alice", "Bob"],
-            "message_ids": ["msg1", "msg2", "msg3"]
+            "message_ids": ["msg1", "msg2", "msg3"],
+            "key_message_ids": ["msg1", "msg3"]
         }"##.to_string());
         
         let parsed = ParsedEntities::from_json(&entities);
@@ -250,6 +266,8 @@ mod tests {
         assert_eq!(parsed.channels.unwrap(), vec!["#engineering", "#product"]);
         assert_eq!(parsed.people.unwrap(), vec!["Alice", "Bob"]);
         assert_eq!(parsed.message_count, Some(3));
+        assert_eq!(parsed.message_ids, vec!["msg1", "msg2", "msg3"]);
+        assert_eq!(parsed.key_message_ids, vec!["msg1", "msg3"]);
     }
 
     #[test]
@@ -260,6 +278,8 @@ mod tests {
         assert!(parsed.channels.is_none());
         assert!(parsed.people.is_none());
         assert!(parsed.message_count.is_none());
+        assert!(parsed.message_ids.is_empty());
+        assert!(parsed.key_message_ids.is_empty());
     }
 
     #[test]
@@ -268,6 +288,21 @@ mod tests {
         let parsed = ParsedEntities::from_json(&entities);
         assert_eq!(parsed.title, "Bug Fix");
         assert!(parsed.channels.is_none());
+        assert!(parsed.message_ids.is_empty());
+        assert!(parsed.key_message_ids.is_empty());
+    }
+    
+    #[test]
+    fn test_parsed_entities_fallback_to_message_ids() {
+        // When key_message_ids is missing, it should be empty
+        let entities = Some(r##"{
+            "topic": "Discussion",
+            "message_ids": ["msg1", "msg2"]
+        }"##.to_string());
+        
+        let parsed = ParsedEntities::from_json(&entities);
+        assert_eq!(parsed.message_ids, vec!["msg1", "msg2"]);
+        assert!(parsed.key_message_ids.is_empty());
     }
 
     #[test]

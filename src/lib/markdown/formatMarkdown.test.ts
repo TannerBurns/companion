@@ -368,6 +368,74 @@ describe('formatDigestMarkdown', () => {
       expect(result).toContain('**Link:** [View Source](https://example.com/item)')
     })
 
+    it('formats single sourceUrl in sourceUrls array as View in Slack link', () => {
+      const result = formatDigestMarkdown({
+        digest: createDigest({
+          items: [createItem({
+            sourceUrls: ['https://workspace.slack.com/archives/C123/p456'],
+            sourceUrl: undefined,
+          })],
+        }),
+        type: 'daily',
+        dateLabel: 'January 15, 2024',
+      })
+
+      expect(result).toContain('**Link:** [View in Slack](https://workspace.slack.com/archives/C123/p456)')
+    })
+
+    it('formats multiple sourceUrls as numbered message links', () => {
+      const result = formatDigestMarkdown({
+        digest: createDigest({
+          items: [createItem({
+            sourceUrls: [
+              'https://workspace.slack.com/archives/C123/p111',
+              'https://workspace.slack.com/archives/C123/p222',
+              'https://workspace.slack.com/archives/C123/p333',
+            ],
+            sourceUrl: undefined,
+          })],
+        }),
+        type: 'daily',
+        dateLabel: 'January 15, 2024',
+      })
+
+      expect(result).toContain('**Links:**')
+      expect(result).toContain('[Message 1](https://workspace.slack.com/archives/C123/p111)')
+      expect(result).toContain('[Message 2](https://workspace.slack.com/archives/C123/p222)')
+      expect(result).toContain('[Message 3](https://workspace.slack.com/archives/C123/p333)')
+    })
+
+    it('prefers sourceUrls over sourceUrl when both present', () => {
+      const result = formatDigestMarkdown({
+        digest: createDigest({
+          items: [createItem({
+            sourceUrls: ['https://workspace.slack.com/archives/C123/p456'],
+            sourceUrl: 'https://example.com/fallback',
+          })],
+        }),
+        type: 'daily',
+        dateLabel: 'January 15, 2024',
+      })
+
+      expect(result).toContain('[View in Slack](https://workspace.slack.com/archives/C123/p456)')
+      expect(result).not.toContain('fallback')
+    })
+
+    it('falls back to sourceUrl when sourceUrls is empty', () => {
+      const result = formatDigestMarkdown({
+        digest: createDigest({
+          items: [createItem({
+            sourceUrls: [],
+            sourceUrl: 'https://example.com/fallback',
+          })],
+        }),
+        type: 'daily',
+        dateLabel: 'January 15, 2024',
+      })
+
+      expect(result).toContain('[View Source](https://example.com/fallback)')
+    })
+
     it('omits metadata line when no optional fields present', () => {
       const result = formatDigestMarkdown({
         digest: createDigest({

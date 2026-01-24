@@ -68,9 +68,19 @@ impl SlackClient {
             ));
         }
         
+        // Extract workspace domain from the URL field (e.g., "https://acme-corp.slack.com/")
+        let team_domain = json["url"].as_str()
+            .and_then(|url| {
+                url.strip_prefix("https://")
+                    .and_then(|s| s.strip_suffix(".slack.com/"))
+                    .or_else(|| url.strip_prefix("https://").and_then(|s| s.strip_suffix(".slack.com")))
+                    .map(String::from)
+            });
+        
         Ok(SlackAuthInfo {
             team_id: json["team_id"].as_str().unwrap_or_default().to_string(),
             team_name: json["team"].as_str().unwrap_or_default().to_string(),
+            team_domain,
             user_id: json["user_id"].as_str().unwrap_or_default().to_string(),
             user_name: json["user"].as_str().unwrap_or_default().to_string(),
         })
@@ -155,6 +165,7 @@ impl SlackClient {
             scope: user.scope.unwrap_or_default(),
             team_id: team.id,
             team_name: team.name,
+            team_domain: None, // Will be populated by test_auth after OAuth
             user_id: user.id,
         })
     }

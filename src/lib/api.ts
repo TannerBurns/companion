@@ -9,6 +9,7 @@ export interface DigestItem {
   categoryConfidence?: number
   source: 'slack' | 'confluence' | 'ai'
   sourceUrl?: string
+  sourceUrls?: string[]
   importanceScore: number
   createdAt: number
   channels?: string[]
