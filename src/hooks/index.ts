@@ -6,6 +6,7 @@ export { usePipeline, getTaskDisplayName, getTaskIcon } from './usePipeline'
 export { useAnalytics } from './useAnalytics'
 export { useUpdater } from './useUpdater'
 export { useSetupStatus } from './useSetupStatus'
+export { useSlackChannels } from './useSlackChannels'
 
 export type {
   DigestNotification,
