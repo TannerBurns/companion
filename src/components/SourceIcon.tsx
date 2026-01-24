@@ -1,8 +1,8 @@
-import { MessageSquare, FileText, CheckSquare, Sparkles } from 'lucide-react'
+import { MessageSquare, FileText, Sparkles } from 'lucide-react'
 import { clsx } from 'clsx'
 
 interface SourceIconProps {
-  source: 'slack' | 'jira' | 'confluence' | 'ai'
+  source: 'slack' | 'confluence' | 'ai'
   className?: string
 }
 
@@ -12,8 +12,6 @@ export function SourceIcon({ source, className = 'h-4 w-4' }: SourceIconProps) {
   switch (source) {
     case 'slack':
       return <MessageSquare className={iconClass} />
-    case 'jira':
-      return <CheckSquare className={iconClass} />
     case 'confluence':
       return <FileText className={iconClass} />
     case 'ai':

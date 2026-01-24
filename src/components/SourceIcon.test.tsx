@@ -11,12 +11,6 @@ describe('SourceIcon', () => {
       expect(svg).toHaveClass('h-4', 'w-4')
     })
 
-    it('renders CheckSquare icon for jira', () => {
-      const { container } = render(<SourceIcon source="jira" />)
-      const svg = container.querySelector('svg')
-      expect(svg).toBeInTheDocument()
-    })
-
     it('renders FileText icon for confluence', () => {
       const { container } = render(<SourceIcon source="confluence" />)
       const svg = container.querySelector('svg')

@@ -22,7 +22,6 @@ const categoryColors: Record<string, { bg: string; text: string }> = {
 // Source icons as text labels
 const sourceLabels: Record<string, string> = {
   slack: 'Slack',
-  jira: 'Jira',
   confluence: 'Confluence',
   ai: 'AI',
 }
