@@ -87,7 +87,7 @@ describe('AboutSection', () => {
 
   it('shows update available with download button', () => {
     mockUseUpdater.mockReturnValue({
-      state: { status: 'available', update: { version: '2.0.0' } },
+      state: { status: 'available', update: { version: '2.0.0' } } as never,
       checkForUpdates: mockCheckForUpdates,
       downloadAndInstall: mockDownloadAndInstall,
       handleRestart: mockHandleRestart,
@@ -99,7 +99,7 @@ describe('AboutSection', () => {
 
   it('calls downloadAndInstall when download button is clicked', () => {
     mockUseUpdater.mockReturnValue({
-      state: { status: 'available', update: { version: '2.0.0' } },
+      state: { status: 'available', update: { version: '2.0.0' } } as never,
       checkForUpdates: mockCheckForUpdates,
       downloadAndInstall: mockDownloadAndInstall,
       handleRestart: mockHandleRestart,
@@ -111,7 +111,7 @@ describe('AboutSection', () => {
 
   it('shows download progress', () => {
     mockUseUpdater.mockReturnValue({
-      state: { status: 'downloading', progress: 50 },
+      state: { status: 'downloading', progress: 50 } as never,
       checkForUpdates: mockCheckForUpdates,
       downloadAndInstall: mockDownloadAndInstall,
       handleRestart: mockHandleRestart,
@@ -122,7 +122,7 @@ describe('AboutSection', () => {
 
   it('shows restart button when update is ready', () => {
     mockUseUpdater.mockReturnValue({
-      state: { status: 'ready' },
+      state: { status: 'ready' } as never,
       checkForUpdates: mockCheckForUpdates,
       downloadAndInstall: mockDownloadAndInstall,
       handleRestart: mockHandleRestart,
@@ -134,7 +134,7 @@ describe('AboutSection', () => {
 
   it('calls handleRestart when restart button is clicked', () => {
     mockUseUpdater.mockReturnValue({
-      state: { status: 'ready' },
+      state: { status: 'ready' } as never,
       checkForUpdates: mockCheckForUpdates,
       downloadAndInstall: mockDownloadAndInstall,
       handleRestart: mockHandleRestart,
@@ -146,7 +146,7 @@ describe('AboutSection', () => {
 
   it('shows error message', () => {
     mockUseUpdater.mockReturnValue({
-      state: { status: 'error', message: 'Network error' },
+      state: { status: 'error', message: 'Network error' } as never,
       checkForUpdates: mockCheckForUpdates,
       downloadAndInstall: mockDownloadAndInstall,
       handleRestart: mockHandleRestart,
