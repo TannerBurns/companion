@@ -57,18 +57,21 @@ pub async fn store_results(
         let should_update = existing.is_some() && ai_recognized_existing;
 
         let merged_message_ids = if should_update {
-            let existing_ids = if let Some(ids) = existing_message_ids_map.get(&topic_id) {
-                ids.clone()
-            } else {
-                tracing::warn!("Topic {} exists in DB but not in local map, fetching from database", topic_id);
-                let db_ids = fetch_message_ids_from_db(pool, &topic_id).await.unwrap_or_else(|e| {
-                    tracing::error!("Failed to fetch message IDs for topic {}: {}", topic_id, e);
-                    vec![]
-                });
-                if !db_ids.is_empty() {
-                    tracing::info!("Recovered {} message IDs from database for topic {}", db_ids.len(), topic_id);
+            let existing_ids = match existing_message_ids_map.get(&topic_id) {
+                Some(ids) if !ids.is_empty() => ids.clone(),
+                _ => {
+                    // Empty vector or missing entry - fall back to database fetch
+                    // This handles cases where message_ids JSON was missing/invalid in original data
+                    tracing::debug!("Topic {} has empty or missing message_ids in local map, fetching from database", topic_id);
+                    let db_ids = fetch_message_ids_from_db(pool, &topic_id).await.unwrap_or_else(|e| {
+                        tracing::error!("Failed to fetch message IDs for topic {}: {}", topic_id, e);
+                        vec![]
+                    });
+                    if !db_ids.is_empty() {
+                        tracing::info!("Recovered {} message IDs from database for topic {}", db_ids.len(), topic_id);
+                    }
+                    db_ids
                 }
-                db_ids
             };
             merge_message_ids(&existing_ids, &group.message_ids)
         } else {

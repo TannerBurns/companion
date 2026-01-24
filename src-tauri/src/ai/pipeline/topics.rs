@@ -293,4 +293,54 @@ mod tests {
         assert!(existing_topics.is_empty());
         assert!(message_ids_map.is_empty());
     }
+
+    #[test]
+    fn test_convert_existing_topics_with_missing_message_ids() {
+        // Test case: valid topic but missing message_ids field
+        // This documents that an empty vector is inserted into message_ids_map
+        // storage::store_results handles this by falling back to DB fetch when vector is empty
+        let rows = vec![
+            ExistingTopicRow {
+                id: "topic_no_msgs".to_string(),
+                summary: "Topic without message_ids".to_string(),
+                category: Some("engineering".to_string()),
+                importance_score: Some(0.7),
+                entities: Some(r##"{"topic": "Missing Message IDs", "channels": ["#general"], "people": ["Bob"]}"##.to_string()),
+            },
+        ];
+        
+        let (message_ids_map, existing_topics) = convert_existing_topics(&rows);
+        
+        // Topic should still be processed
+        assert_eq!(existing_topics.len(), 1);
+        assert_eq!(existing_topics[0].topic, "Missing Message IDs");
+        assert_eq!(existing_topics[0].message_count, 0);
+        
+        // message_ids_map contains an empty vector for this topic
+        // storage::store_results should fall back to DB fetch when it encounters this
+        assert_eq!(message_ids_map.len(), 1);
+        assert_eq!(message_ids_map.get("topic_no_msgs"), Some(&vec![]));
+    }
+
+    #[test]
+    fn test_convert_existing_topics_with_invalid_message_ids_type() {
+        // Test case: message_ids exists but is wrong type (string instead of array)
+        let rows = vec![
+            ExistingTopicRow {
+                id: "topic_bad_type".to_string(),
+                summary: "Topic with wrong message_ids type".to_string(),
+                category: Some("product".to_string()),
+                importance_score: Some(0.6),
+                entities: Some(r##"{"topic": "Wrong Type", "channels": [], "people": [], "message_ids": "not_an_array"}"##.to_string()),
+            },
+        ];
+        
+        let (message_ids_map, existing_topics) = convert_existing_topics(&rows);
+        
+        assert_eq!(existing_topics.len(), 1);
+        assert_eq!(existing_topics[0].message_count, 0);
+        
+        // Empty vector because parsing failed
+        assert_eq!(message_ids_map.get("topic_bad_type"), Some(&vec![]));
+    }
 }
