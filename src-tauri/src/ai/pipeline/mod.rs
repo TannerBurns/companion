@@ -14,7 +14,7 @@ use chrono::Utc;
 use crate::db::Database;
 use crate::crypto::CryptoService;
 use super::gemini::{GeminiClient, ServiceAccountCredentials};
-use super::prompts::{self, SummaryResult, GroupedAnalysisResult, ExistingTopic};
+use super::prompts::{self, GroupedAnalysisResult, ExistingTopic};
 
 /// Main AI processing pipeline for content analysis.
 pub struct ProcessingPipeline {
@@ -463,104 +463,6 @@ impl ProcessingPipeline {
         }
 
         Ok(stored_count)
-    }
-
-    /// Process pending items individually (legacy method).
-    #[allow(dead_code)]
-    pub async fn process_pending(&self) -> Result<i32, String> {
-        let items: Vec<ContentItemRow> = sqlx::query_as(
-            "SELECT ci.id, ci.source, ci.content_type, ci.title, ci.body, 
-                    ci.author_id, ci.channel_or_project, ci.source_url, ci.parent_id, ci.created_at
-             FROM content_items ci
-             LEFT JOIN ai_summaries s ON ci.id = s.content_item_id
-             WHERE s.id IS NULL
-             LIMIT 50"
-        )
-        .fetch_all(self.db.pool())
-        .await
-        .map_err(|e| e.to_string())?;
-
-        let mut processed = 0;
-        
-        for item in items {
-            if let Err(e) = self.process_item(
-                &item.id,
-                &item.source,
-                &item.content_type,
-                item.title,
-                item.body,
-                item.channel_or_project,
-            ).await {
-                tracing::error!("Failed to process item {}: {}", item.id, e);
-                continue;
-            }
-            processed += 1;
-        }
-
-        Ok(processed)
-    }
-
-    /// Process a single content item.
-    async fn process_item(
-        &self,
-        id: &str,
-        source: &str,
-        content_type: &str,
-        title: Option<String>,
-        body: Option<String>,
-        channel: Option<String>,
-    ) -> Result<(), String> {
-        let body_text = match body {
-            Some(encrypted) => self.crypto
-                .decrypt_string(&encrypted)
-                .map_err(|e| e.to_string())?,
-            None => String::new(),
-        };
-
-        let prompt = match (source, content_type) {
-            ("slack", "message") => prompts::slack_message_prompt(
-                channel.as_deref().unwrap_or("unknown"),
-                &body_text,
-            ),
-            ("jira", "ticket") => prompts::jira_issue_prompt(
-                id,
-                title.as_deref().unwrap_or(""),
-                &body_text,
-            ),
-            ("confluence", "page") => prompts::confluence_page_prompt(
-                title.as_deref().unwrap_or(""),
-                channel.as_deref().unwrap_or(""),
-                &body_text,
-            ),
-            _ => return Ok(()),
-        };
-
-        let result: SummaryResult = self.gemini
-            .generate_json(&prompt)
-            .await
-            .map_err(|e| e.to_string())?;
-
-        let now = chrono::Utc::now().timestamp_millis();
-        let summary_id = uuid::Uuid::new_v4().to_string();
-        
-        sqlx::query(
-            "INSERT INTO ai_summaries (id, content_item_id, summary_type, summary, highlights, category, category_confidence, importance_score, entities, generated_at)
-             VALUES (?, ?, 'item', ?, ?, ?, ?, ?, ?, ?)"
-        )
-        .bind(&summary_id)
-        .bind(id)
-        .bind(&result.summary)
-        .bind(serde_json::to_string(&result.highlights).unwrap())
-        .bind(&result.category)
-        .bind(result.category_confidence)
-        .bind(result.importance_score)
-        .bind(serde_json::to_string(&result.entities).unwrap())
-        .bind(now)
-        .execute(self.db.pool())
-        .await
-        .map_err(|e| e.to_string())?;
-
-        Ok(())
     }
 
     /// Generate daily digest for a specific date.
