@@ -325,7 +325,7 @@ function DigestItemRow({ item }: DigestItemRowProps) {
             {item.sourceUrls && item.sourceUrls.length > 0 ? (
               item.sourceUrls.map((url, idx) => (
                 <Link key={idx} src={url} style={styles.linkButton}>
-                  {item.sourceUrls.length > 1 ? `Message ${idx + 1}` : 'Open in Slack'}
+                  {(item.sourceUrls?.length ?? 0) > 1 ? `Message ${idx + 1}` : 'Open in Slack'}
                 </Link>
               ))
             ) : item.sourceUrl ? (
