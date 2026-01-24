@@ -4,6 +4,7 @@ import {
   Text,
   View,
   StyleSheet,
+  Link,
 } from '@react-pdf/renderer'
 import type { DigestItem, DigestResponse } from '../api'
 import type { PDFDayGroup } from './types'
@@ -178,6 +179,30 @@ const styles = StyleSheet.create({
     height: 6,
     borderRadius: 3,
   },
+  linksContainer: {
+    marginTop: 8,
+    paddingTop: 6,
+    borderTop: '1 solid #e5e7eb',
+  },
+  linksLabel: {
+    fontSize: 8,
+    color: '#6b7280',
+    marginBottom: 4,
+  },
+  linksRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  linkButton: {
+    fontSize: 8,
+    color: '#2563eb',
+    backgroundColor: '#eff6ff',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 4,
+    textDecoration: 'none',
+  },
   footer: {
     position: 'absolute',
     bottom: 30,
@@ -289,6 +314,28 @@ function DigestItemRow({ item }: DigestItemRowProps) {
         </View>
         <ImportanceIndicator score={item.importanceScore} />
       </View>
+
+      {/* Source Links */}
+      {(item.sourceUrls?.length || item.sourceUrl) && (
+        <View style={styles.linksContainer}>
+          <Text style={styles.linksLabel}>
+            {(item.sourceUrls?.length ?? 0) > 1 ? 'View Original Messages:' : 'View in Slack:'}
+          </Text>
+          <View style={styles.linksRow}>
+            {item.sourceUrls && item.sourceUrls.length > 0 ? (
+              item.sourceUrls.map((url, idx) => (
+                <Link key={idx} src={url} style={styles.linkButton}>
+                  {item.sourceUrls.length > 1 ? `Message ${idx + 1}` : 'Open in Slack'}
+                </Link>
+              ))
+            ) : item.sourceUrl ? (
+              <Link src={item.sourceUrl} style={styles.linkButton}>
+                Open in Slack
+              </Link>
+            ) : null}
+          </View>
+        </View>
+      )}
     </View>
   )
 }

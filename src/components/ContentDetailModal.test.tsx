@@ -1,5 +1,6 @@
 import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { open as shellOpen } from '@tauri-apps/plugin-shell'
 import { ContentDetailModal } from './ContentDetailModal'
 import type { DigestItem } from '../lib/api'
 
@@ -155,16 +156,90 @@ describe('ContentDetailModal', () => {
       expect(screen.queryByRole('button', { name: /View in/i })).not.toBeInTheDocument()
     })
 
-    it('opens sourceUrl in new tab when View button is clicked', () => {
-      const windowOpen = vi.spyOn(window, 'open').mockImplementation(() => null)
+    it('opens sourceUrl using shell API when View button is clicked', async () => {
       render(<ContentDetailModal item={mockItem} onClose={mockOnClose} />)
       fireEvent.click(screen.getByRole('button', { name: /View in Slack/i }))
-      expect(windowOpen).toHaveBeenCalledWith(
-        'https://slack.com/archives/C123/p456',
-        '_blank',
-        'noopener,noreferrer'
-      )
-      windowOpen.mockRestore()
+      expect(shellOpen).toHaveBeenCalledWith('https://slack.com/archives/C123/p456')
+    })
+  })
+
+  describe('multiple source URLs', () => {
+    it('displays Jump to Key Messages heading when multiple sourceUrls exist', () => {
+      const itemWithMultipleUrls = {
+        ...mockItem,
+        sourceUrls: [
+          'https://workspace.slack.com/archives/C123/p111',
+          'https://workspace.slack.com/archives/C123/p222',
+        ],
+      }
+      render(<ContentDetailModal item={itemWithMultipleUrls} onClose={mockOnClose} />)
+      expect(screen.getByText('Jump to Key Messages')).toBeInTheDocument()
+    })
+
+    it('displays individual message buttons for each sourceUrl', () => {
+      const itemWithMultipleUrls = {
+        ...mockItem,
+        sourceUrls: [
+          'https://workspace.slack.com/archives/C123/p111',
+          'https://workspace.slack.com/archives/C123/p222',
+          'https://workspace.slack.com/archives/C123/p333',
+        ],
+      }
+      render(<ContentDetailModal item={itemWithMultipleUrls} onClose={mockOnClose} />)
+      expect(screen.getByRole('button', { name: /Message 1/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Message 2/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Message 3/i })).toBeInTheDocument()
+    })
+
+    it('opens correct URL when individual message button is clicked', async () => {
+      const itemWithMultipleUrls = {
+        ...mockItem,
+        sourceUrls: [
+          'https://workspace.slack.com/archives/C123/p111',
+          'https://workspace.slack.com/archives/C123/p222',
+        ],
+      }
+      render(<ContentDetailModal item={itemWithMultipleUrls} onClose={mockOnClose} />)
+      fireEvent.click(screen.getByRole('button', { name: /Message 2/i }))
+      expect(shellOpen).toHaveBeenCalledWith('https://workspace.slack.com/archives/C123/p222')
+    })
+
+    it('uses single View in Slack button when only one sourceUrl in array', () => {
+      const itemWithSingleUrlArray = {
+        ...mockItem,
+        sourceUrls: ['https://workspace.slack.com/archives/C123/p111'],
+        sourceUrl: undefined,
+      }
+      render(<ContentDetailModal item={itemWithSingleUrlArray} onClose={mockOnClose} />)
+      expect(screen.queryByText('Jump to Key Messages')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /View in Slack/i })).toBeInTheDocument()
+    })
+
+    it('prefers sourceUrls over sourceUrl when both present', () => {
+      const itemWithBoth = {
+        ...mockItem,
+        sourceUrls: [
+          'https://workspace.slack.com/archives/C123/p111',
+          'https://workspace.slack.com/archives/C123/p222',
+        ],
+        sourceUrl: 'https://fallback.slack.com',
+      }
+      render(<ContentDetailModal item={itemWithBoth} onClose={mockOnClose} />)
+      expect(screen.getByText('Jump to Key Messages')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: /Message 1/i }))
+      expect(shellOpen).toHaveBeenCalledWith('https://workspace.slack.com/archives/C123/p111')
+    })
+
+    it('displays AI context message when multiple sourceUrls exist', () => {
+      const itemWithMultipleUrls = {
+        ...mockItem,
+        sourceUrls: [
+          'https://workspace.slack.com/archives/C123/p111',
+          'https://workspace.slack.com/archives/C123/p222',
+        ],
+      }
+      render(<ContentDetailModal item={itemWithMultipleUrls} onClose={mockOnClose} />)
+      expect(screen.getByText(/AI-selected messages/i)).toBeInTheDocument()
     })
   })
 

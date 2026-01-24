@@ -60,6 +60,7 @@ mod tests {
             category: "test".to_string(),
             source: "slack".to_string(),
             source_url: None,
+            source_urls: None,
             importance_score: 0.5,
             created_at: 0,
             channels: None,

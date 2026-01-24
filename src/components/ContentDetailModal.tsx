@@ -4,6 +4,7 @@ import { CategoryBadge } from './CategoryBadge'
 import { SourceIcon } from './SourceIcon'
 import { ImportanceIndicator } from './ImportanceIndicator'
 import { Button } from './ui/Button'
+import { openUrl } from '../lib/openUrl'
 import type { DigestItem } from '../lib/api'
 
 interface ContentDetailModalProps {
@@ -159,14 +160,40 @@ export function ContentDetailModal({ item, onClose }: ContentDetailModalProps) {
         </div>
 
         {/* Footer */}
-        {item.sourceUrl && (
-          <div className="flex items-center justify-end gap-3 p-6 border-t border-border bg-muted/30">
-            <Button
-              onClick={() => window.open(item.sourceUrl, '_blank', 'noopener,noreferrer')}
-            >
-              <ExternalLink className="h-4 w-4" />
-              View in {item.source === 'slack' ? 'Slack' : item.source === 'confluence' ? 'Confluence' : item.source === 'ai' ? 'AI' : 'Source'}
-            </Button>
+        {(item.sourceUrls?.length || item.sourceUrl) && (
+          <div className="flex flex-col gap-3 p-6 border-t border-border bg-muted/30">
+            {item.sourceUrls && item.sourceUrls.length > 1 ? (
+              <>
+                <div className="text-sm font-medium text-foreground">
+                  Jump to Key Messages
+                </div>
+                <div className="text-xs text-muted-foreground mb-1">
+                  AI-selected messages most relevant for context
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {item.sourceUrls.map((url, index) => (
+                    <Button
+                      key={index}
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => openUrl(url)}
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      Message {index + 1}
+                    </Button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="flex items-center justify-end">
+                <Button
+                  onClick={() => openUrl(item.sourceUrls?.[0] || item.sourceUrl || '')}
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  View in {item.source === 'slack' ? 'Slack' : item.source === 'confluence' ? 'Confluence' : item.source === 'ai' ? 'AI' : 'Source'}
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </div>

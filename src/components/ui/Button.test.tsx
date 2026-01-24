@@ -39,6 +39,12 @@ describe('Button', () => {
       const button = screen.getByRole('button')
       expect(button).toHaveClass('bg-red-500')
     })
+
+    it('applies secondary variant styles', () => {
+      render(<Button variant="secondary">Secondary</Button>)
+      const button = screen.getByRole('button')
+      expect(button).toHaveClass('bg-primary-100', 'text-primary-700')
+    })
   })
 
   describe('sizes', () => {

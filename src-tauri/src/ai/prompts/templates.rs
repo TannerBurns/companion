@@ -178,6 +178,7 @@ Return JSON with this exact structure:
       "category": "one of: sales, marketing, product, engineering, research, other",
       "importance_score": 0.0-1.0,
       "message_ids": ["id1", "id2", "id3"],
+      "key_message_ids": ["id1", "id2"],
       "people": ["person1", "person2"]
     }}
   ],
@@ -201,7 +202,8 @@ Guidelines:
 - importance_score: 0.9-1.0 for critical business decisions, 0.6-0.8 for important updates, 0.3-0.5 for routine, 0.0-0.2 for noise
 - Identify action items that emerge from discussions
 - The daily_summary should give an executive the key takeaways in 30 seconds
-- topic_id: When updating an existing topic, copy the exact topic_id string from the existing topics list. For new topics, set topic_id to null"##)
+- topic_id: When updating an existing topic, copy the exact topic_id string from the existing topics list. For new topics, set topic_id to null
+- key_message_ids: Select 1-3 of the MOST IMPORTANT messages that would be best for jumping back into the original conversation. Choose messages that provide the most context or contain key decisions/information. These will be shown as direct links to Slack."##)
 }
 
 /// Generate a prompt for summarizing a single channel.
@@ -266,6 +268,7 @@ Return JSON with this structure:
       "category": "one of: sales, marketing, product, engineering, research, other",
       "importance_score": 0.0-1.0,
       "message_ids": ["notable_id1", "notable_id2"],
+      "key_message_ids": ["notable_id1"],
       "people": ["person1", "person2"]
     }}
   ],
@@ -278,7 +281,8 @@ Guidelines:
 - Group discussions by TOPIC, not by channel
 - A channel's content can be split across multiple topic groups
 - importance_score: based on business impact, not just activity level
-- Include action items that emerge from discussions"##)
+- Include action items that emerge from discussions
+- key_message_ids: Select 1-3 of the MOST IMPORTANT messages for jumping back into the conversation"##)
 }
 
 #[cfg(test)]

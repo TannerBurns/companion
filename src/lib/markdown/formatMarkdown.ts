@@ -42,11 +42,22 @@ function formatItem(item: DigestItem): string {
   if (item.messageCount !== undefined && item.messageCount > 0) {
     meta.push(`**Messages:** ${item.messageCount}`)
   }
-  if (item.sourceUrl) {
-    meta.push(`**Link:** [View Source](${item.sourceUrl})`)
-  }
   if (meta.length > 0) {
     lines.push(meta.join(' | '))
+    lines.push('')
+  }
+
+  // Add source links - prefer multiple sourceUrls, fall back to single sourceUrl
+  if (item.sourceUrls && item.sourceUrls.length > 0) {
+    if (item.sourceUrls.length === 1) {
+      lines.push(`**Link:** [View in Slack](${item.sourceUrls[0]})`)
+    } else {
+      const links = item.sourceUrls.map((url, i) => `[Message ${i + 1}](${url})`).join(' | ')
+      lines.push(`**Links:** ${links}`)
+    }
+    lines.push('')
+  } else if (item.sourceUrl) {
+    lines.push(`**Link:** [View Source](${item.sourceUrl})`)
     lines.push('')
   }
 

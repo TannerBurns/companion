@@ -29,11 +29,17 @@ pub struct SlackSyncService {
     client: SlackClient,
     db: Arc<Database>,
     crypto: Arc<CryptoService>,
+    team_domain: Option<String>,
 }
 
 impl SlackSyncService {
     pub fn new(client: SlackClient, db: Arc<Database>, crypto: Arc<CryptoService>) -> Self {
-        Self { client, db, crypto }
+        Self { client, db, crypto, team_domain: None }
+    }
+    
+    pub fn with_team_domain(mut self, domain: Option<String>) -> Self {
+        self.team_domain = domain;
+        self
     }
     
     async fn get_sync_cursor(&self, channel_id: &str) -> Result<Option<String>, SlackError> {
@@ -336,10 +342,16 @@ impl SlackSyncService {
             .encrypt_string(&msg.text)
             .map_err(|e| SlackError::Crypto(e.to_string()))?;
         
-        let source_url = format!(
-            "https://slack.com/app_redirect?channel={}&message_ts={}",
-            channel.id, msg.ts
-        );
+        let source_url = if let Some(ref domain) = self.team_domain {
+            // e.g., https://acme-corp.slack.com/archives/C04KQBBPPLN/p1769203754053419
+            let permalink_ts = format!("p{}", msg.ts.replace('.', ""));
+            format!("https://{}.slack.com/archives/{}/{}", domain, channel.id, permalink_ts)
+        } else {
+            format!(
+                "https://slack.com/app_redirect?channel={}&message_ts={}",
+                channel.id, msg.ts
+            )
+        };
         
         sqlx::query(
             "INSERT INTO content_items (id, source, source_id, source_url, content_type, title, body, author_id, channel_or_project, parent_id, created_at, updated_at, synced_at)

@@ -1,9 +1,64 @@
 use crate::AppState;
+use crate::db::Database;
 use super::types::{DigestItem, DigestResponse, CategorySummary, GroupRow, ParsedEntities};
 use chrono::Datelike;
 use std::sync::Arc;
+use std::collections::HashMap;
 use tauri::State;
 use tokio::sync::Mutex;
+
+type ParsedGroup = (String, String, Option<Vec<String>>, String, f64, i64, ParsedEntities);
+
+async fn batch_lookup_source_urls(
+    db: &Database,
+    groups: &[(String, Vec<String>)],
+    urls_per_group: usize,
+) -> Result<HashMap<String, Vec<String>>, String> {
+    if groups.is_empty() {
+        return Ok(HashMap::new());
+    }
+    
+    let all_ids: Vec<&String> = groups
+        .iter()
+        .flat_map(|(_, ids)| ids.iter().take(urls_per_group))
+        .collect();
+    
+    if all_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    
+    let placeholders: String = all_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    let query = format!(
+        "SELECT id, source_url FROM content_items WHERE id IN ({}) AND source_url IS NOT NULL",
+        placeholders
+    );
+    
+    let mut query_builder = sqlx::query_as::<_, (String, String)>(&query);
+    for id in &all_ids {
+        query_builder = query_builder.bind(*id);
+    }
+    
+    let results: Vec<(String, String)> = query_builder
+        .fetch_all(db.pool())
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    let url_map: HashMap<String, String> = results.into_iter().collect();
+    
+    let mut result: HashMap<String, Vec<String>> = HashMap::new();
+    for (group_id, message_ids) in groups {
+        let urls: Vec<String> = message_ids
+            .iter()
+            .take(urls_per_group)
+            .filter_map(|id| url_map.get(id).cloned())
+            .collect();
+        if !urls.is_empty() {
+            result.insert(group_id.clone(), urls);
+        }
+    }
+    
+    Ok(result)
+}
 
 /// Get the daily digest for a specific date
 #[tauri::command]
@@ -56,24 +111,57 @@ pub async fn get_daily_digest(
     .await
     .map_err(|e| e.to_string())?;
     
+    let mut parsed_groups: Vec<ParsedGroup> = Vec::new();
+    let mut groups_for_url_lookup: Vec<(String, Vec<String>)> = Vec::new();
+    
+    for (id, summary, highlights_json, category, importance_score, entities, generated_at) in &groups {
+        let parsed = ParsedEntities::from_json(entities);
+        let highlights: Option<Vec<String>> = highlights_json
+            .as_ref()
+            .and_then(|h| serde_json::from_str(h).ok());
+        let cat = category.clone().unwrap_or_else(|| "other".to_string());
+        
+        let ids_for_lookup = if !parsed.key_message_ids.is_empty() {
+            parsed.key_message_ids.clone()
+        } else {
+            parsed.message_ids.clone()
+        };
+        
+        if !ids_for_lookup.is_empty() {
+            groups_for_url_lookup.push((id.clone(), ids_for_lookup));
+        }
+        
+        parsed_groups.push((
+            id.clone(),
+            summary.clone(),
+            highlights,
+            cat,
+            importance_score.unwrap_or(0.5),
+            *generated_at,
+            parsed,
+        ));
+    }
+    
+    let source_urls_map = batch_lookup_source_urls(&db, &groups_for_url_lookup, 3).await?;
+    
     let mut items: Vec<DigestItem> = Vec::new();
     let mut category_counts: std::collections::HashMap<String, (i32, Vec<DigestItem>)> = std::collections::HashMap::new();
     
-    for (id, summary, highlights_json, category, importance_score, entities, generated_at) in groups {
-        let parsed = ParsedEntities::from_json(&entities);
-        let highlights: Option<Vec<String>> = highlights_json
-            .and_then(|h| serde_json::from_str(&h).ok());
-        let cat = category.clone().unwrap_or_else(|| "other".to_string());
+    for (id, summary, highlights, cat, importance_score, generated_at, parsed) in parsed_groups {
+        let urls = source_urls_map.get(&id).cloned();
+        // Use first URL as primary source_url for backward compatibility
+        let primary_url = urls.as_ref().and_then(|u| u.first().cloned());
         
         let item = DigestItem {
             id: id.clone(),
             title: parsed.title,
-            summary: summary.clone(),
+            summary,
             highlights,
             category: cat.clone(),
             source: "slack".to_string(),
-            source_url: None,
-            importance_score: importance_score.unwrap_or(0.5),
+            source_url: primary_url,
+            source_urls: urls,
+            importance_score,
             created_at: generated_at,
             channels: parsed.channels,
             people: parsed.people,
@@ -112,6 +200,7 @@ pub async fn get_daily_digest(
             category: "overview".to_string(),
             source: "ai".to_string(),
             source_url: None,
+            source_urls: None,
             importance_score: 1.0,
             created_at: start_ts,
             channels: None,
@@ -177,7 +266,7 @@ pub async fn get_weekly_digest(
     let start_ts = local_midnight.with_timezone(&chrono::Utc).timestamp_millis();
     let end_ts = start_ts + 7 * 86400 * 1000;
     
-    let groups: Vec<GroupRow> = sqlx::query_as(
+    let weekly_groups: Vec<GroupRow> = sqlx::query_as(
         "SELECT id, summary, highlights, category, importance_score, entities, generated_at
          FROM ai_summaries 
          WHERE summary_type = 'group' AND generated_at >= ? AND generated_at < ?
@@ -189,24 +278,57 @@ pub async fn get_weekly_digest(
     .await
     .map_err(|e| e.to_string())?;
     
+    let mut parsed_weekly_groups: Vec<ParsedGroup> = Vec::new();
+    let mut weekly_groups_for_url_lookup: Vec<(String, Vec<String>)> = Vec::new();
+    
+    for (id, summary, highlights_json, category, importance_score, entities, generated_at) in &weekly_groups {
+        let parsed = ParsedEntities::from_json(entities);
+        let highlights: Option<Vec<String>> = highlights_json
+            .as_ref()
+            .and_then(|h| serde_json::from_str(h).ok());
+        let cat = category.clone().unwrap_or_else(|| "other".to_string());
+        
+        let ids_for_lookup = if !parsed.key_message_ids.is_empty() {
+            parsed.key_message_ids.clone()
+        } else {
+            parsed.message_ids.clone()
+        };
+        
+        if !ids_for_lookup.is_empty() {
+            weekly_groups_for_url_lookup.push((id.clone(), ids_for_lookup));
+        }
+        
+        parsed_weekly_groups.push((
+            id.clone(),
+            summary.clone(),
+            highlights,
+            cat,
+            importance_score.unwrap_or(0.5),
+            *generated_at,
+            parsed,
+        ));
+    }
+    
+    let weekly_source_urls_map = batch_lookup_source_urls(&db, &weekly_groups_for_url_lookup, 3).await?;
+    
     let mut items: Vec<DigestItem> = Vec::new();
     let mut category_counts: std::collections::HashMap<String, (i32, Vec<DigestItem>)> = std::collections::HashMap::new();
     
-    for (id, summary, highlights_json, category, importance_score, entities, generated_at) in groups {
-        let parsed = ParsedEntities::from_json(&entities);
-        let highlights: Option<Vec<String>> = highlights_json
-            .and_then(|h| serde_json::from_str(&h).ok());
-        let cat = category.clone().unwrap_or_else(|| "other".to_string());
+    for (id, summary, highlights, cat, importance_score, generated_at, parsed) in parsed_weekly_groups {
+        let urls = weekly_source_urls_map.get(&id).cloned();
+        // Use first URL as primary source_url for backward compatibility
+        let primary_url = urls.as_ref().and_then(|u| u.first().cloned());
         
         let item = DigestItem {
             id: id.clone(),
             title: parsed.title,
-            summary: summary.clone(),
+            summary,
             highlights,
             category: cat.clone(),
             source: "slack".to_string(),
-            source_url: None,
-            importance_score: importance_score.unwrap_or(0.5),
+            source_url: primary_url,
+            source_urls: urls,
+            importance_score,
             created_at: generated_at,
             channels: parsed.channels,
             people: parsed.people,
@@ -253,6 +375,7 @@ pub async fn get_weekly_digest(
             category: "overview".to_string(),
             source: "ai".to_string(),
             source_url: None,
+            source_urls: None,
             importance_score: 0.95, // High but below 1.0 so they sort after group items
             created_at: *generated_at,
             channels: None,
