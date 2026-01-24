@@ -642,8 +642,6 @@ impl ProcessingPipeline {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_service_account_credential_parsing() {
         // Test that SERVICE_ACCOUNT: prefix is detected

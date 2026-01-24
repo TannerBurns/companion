@@ -127,7 +127,7 @@ mod tests {
         let mut large_channels = 0;
         let mut small_channels = 0;
         
-        for (_, messages) in &messages_by_channel {
+        for messages in messages_by_channel.values() {
             if messages.len() >= HIERARCHICAL_CHANNEL_THRESHOLD {
                 large_channels += 1;
             } else {

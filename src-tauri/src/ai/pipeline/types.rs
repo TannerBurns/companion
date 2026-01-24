@@ -58,7 +58,6 @@ mod tests {
     fn test_hierarchical_thresholds() {
         assert_eq!(HIERARCHICAL_CHANNEL_THRESHOLD, 50);
         assert_eq!(HIERARCHICAL_TOTAL_THRESHOLD, 200);
-        assert!(HIERARCHICAL_TOTAL_THRESHOLD > HIERARCHICAL_CHANNEL_THRESHOLD);
     }
 
     #[test]

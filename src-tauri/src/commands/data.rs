@@ -208,7 +208,7 @@ mod tests {
             "slack_users",
         ];
         
-        let tables_for_factory_reset = vec![
+        let tables_for_factory_reset = [
             "content_items",
             "ai_summaries",
             "sync_state",
