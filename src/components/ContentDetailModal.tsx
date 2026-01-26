@@ -100,27 +100,38 @@ export function ContentDetailModal({ item, onClose }: ContentDetailModalProps) {
           )}
 
           {/* Key Messages */}
-          {item.sourceUrls && item.sourceUrls.length > 0 && (
-            <div className="mb-6">
-              <h3 className="text-sm font-medium text-foreground mb-2">Key Messages</h3>
-              <p className="text-xs text-muted-foreground mb-3">
-                Jump directly to the most relevant messages in the original conversation
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {item.sourceUrls.map((url, index) => (
-                  <Button
-                    key={index}
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => openUrl(url)}
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                    Message {index + 1}
-                  </Button>
-                ))}
+          {(() => {
+            // Prefer sourceUrls array, fallback to sourceUrl if available
+            const urls = item.sourceUrls && item.sourceUrls.length > 0
+              ? item.sourceUrls
+              : item.sourceUrl
+                ? [item.sourceUrl]
+                : []
+            
+            if (urls.length === 0) return null
+            
+            return (
+              <div className="mb-6">
+                <h3 className="text-sm font-medium text-foreground mb-2">Key Messages</h3>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Jump directly to the most relevant messages in the original conversation
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {urls.map((url, index) => (
+                    <Button
+                      key={index}
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => openUrl(url)}
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      Message {index + 1}
+                    </Button>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            )
+          })()}
 
           {/* Source Info - Channels, People, Message Count */}
           {(item.channels?.length || item.people?.length || item.messageCount) && (

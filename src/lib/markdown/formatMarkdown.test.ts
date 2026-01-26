@@ -356,7 +356,7 @@ describe('formatDigestMarkdown', () => {
       expect(result).not.toContain('**Messages:**')
     })
 
-    it('does not include link when only sourceUrl is present (no sourceUrls)', () => {
+    it('falls back to sourceUrl when sourceUrls is undefined', () => {
       const result = formatDigestMarkdown({
         digest: createDigest({
           items: [createItem({ sourceUrl: 'https://example.com/item', sourceUrls: undefined })],
@@ -365,8 +365,19 @@ describe('formatDigestMarkdown', () => {
         dateLabel: 'January 15, 2024',
       })
 
+      expect(result).toContain('**Key Messages:** [Message 1](https://example.com/item)')
+    })
+
+    it('does not include Key Messages when both sourceUrls and sourceUrl are undefined', () => {
+      const result = formatDigestMarkdown({
+        digest: createDigest({
+          items: [createItem({ sourceUrl: undefined, sourceUrls: undefined })],
+        }),
+        type: 'daily',
+        dateLabel: 'January 15, 2024',
+      })
+
       expect(result).not.toContain('**Key Messages:**')
-      expect(result).not.toContain('https://example.com/item')
     })
 
     it('formats single sourceUrl in sourceUrls array as Key Messages link', () => {
@@ -422,12 +433,27 @@ describe('formatDigestMarkdown', () => {
       expect(result).not.toContain('fallback')
     })
 
-    it('does not include Key Messages when sourceUrls is empty', () => {
+    it('falls back to sourceUrl when sourceUrls is empty array', () => {
       const result = formatDigestMarkdown({
         digest: createDigest({
           items: [createItem({
             sourceUrls: [],
             sourceUrl: 'https://example.com/fallback',
+          })],
+        }),
+        type: 'daily',
+        dateLabel: 'January 15, 2024',
+      })
+
+      expect(result).toContain('**Key Messages:** [Message 1](https://example.com/fallback)')
+    })
+
+    it('does not include Key Messages when sourceUrls is empty and sourceUrl is undefined', () => {
+      const result = formatDigestMarkdown({
+        digest: createDigest({
+          items: [createItem({
+            sourceUrls: [],
+            sourceUrl: undefined,
           })],
         }),
         type: 'daily',

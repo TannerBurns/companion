@@ -47,9 +47,15 @@ function formatItem(item: DigestItem): string {
     lines.push('')
   }
 
-  // Add key message links
-  if (item.sourceUrls && item.sourceUrls.length > 0) {
-    const links = item.sourceUrls.map((url, i) => `[Message ${i + 1}](${url})`).join(' | ')
+  // Add key message links - prefer sourceUrls, fallback to sourceUrl
+  const urls = item.sourceUrls && item.sourceUrls.length > 0
+    ? item.sourceUrls
+    : item.sourceUrl
+      ? [item.sourceUrl]
+      : []
+  
+  if (urls.length > 0) {
+    const links = urls.map((url, i) => `[Message ${i + 1}](${url})`).join(' | ')
     lines.push(`**Key Messages:** ${links}`)
     lines.push('')
   }

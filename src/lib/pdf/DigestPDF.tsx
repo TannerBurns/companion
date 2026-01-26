@@ -315,19 +315,29 @@ function DigestItemRow({ item }: DigestItemRowProps) {
         <ImportanceIndicator score={item.importanceScore} />
       </View>
 
-      {/* Key Messages */}
-      {item.sourceUrls && item.sourceUrls.length > 0 && (
-        <View style={styles.linksContainer}>
-          <Text style={styles.linksLabel}>Key Messages:</Text>
-          <View style={styles.linksRow}>
-            {item.sourceUrls.map((url, idx) => (
-              <Link key={idx} src={url} style={styles.linkButton}>
-                Message {idx + 1}
-              </Link>
-            ))}
+      {/* Key Messages - prefer sourceUrls, fallback to sourceUrl */}
+      {(() => {
+        const urls = item.sourceUrls && item.sourceUrls.length > 0
+          ? item.sourceUrls
+          : item.sourceUrl
+            ? [item.sourceUrl]
+            : []
+        
+        if (urls.length === 0) return null
+        
+        return (
+          <View style={styles.linksContainer}>
+            <Text style={styles.linksLabel}>Key Messages:</Text>
+            <View style={styles.linksRow}>
+              {urls.map((url, idx) => (
+                <Link key={idx} src={url} style={styles.linkButton}>
+                  Message {idx + 1}
+                </Link>
+              ))}
+            </View>
           </View>
-        </View>
-      )}
+        )
+      })()}
     </View>
   )
 }

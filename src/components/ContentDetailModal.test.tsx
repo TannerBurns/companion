@@ -139,16 +139,39 @@ describe('ContentDetailModal', () => {
   })
 
   describe('key messages section', () => {
-    it('does not show Key Messages section when sourceUrls is undefined', () => {
-      const itemWithoutUrls = { ...mockItem, sourceUrls: undefined }
+    it('does not show Key Messages section when both sourceUrls and sourceUrl are undefined', () => {
+      const itemWithoutUrls = { ...mockItem, sourceUrls: undefined, sourceUrl: undefined }
       render(<ContentDetailModal item={itemWithoutUrls} onClose={mockOnClose} />)
       expect(screen.queryByText('Key Messages')).not.toBeInTheDocument()
     })
 
-    it('does not show Key Messages section when sourceUrls is empty', () => {
-      const itemWithEmptyUrls = { ...mockItem, sourceUrls: [] }
+    it('does not show Key Messages section when sourceUrls is empty and sourceUrl is undefined', () => {
+      const itemWithEmptyUrls = { ...mockItem, sourceUrls: [], sourceUrl: undefined }
       render(<ContentDetailModal item={itemWithEmptyUrls} onClose={mockOnClose} />)
       expect(screen.queryByText('Key Messages')).not.toBeInTheDocument()
+    })
+
+    it('falls back to sourceUrl when sourceUrls is undefined', () => {
+      const itemWithOnlySourceUrl = { 
+        ...mockItem, 
+        sourceUrls: undefined, 
+        sourceUrl: 'https://slack.com/archives/C123/p789' 
+      }
+      render(<ContentDetailModal item={itemWithOnlySourceUrl} onClose={mockOnClose} />)
+      expect(screen.getByText('Key Messages')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Message 1/i })).toBeInTheDocument()
+    })
+
+    it('falls back to sourceUrl when sourceUrls is empty array', () => {
+      const itemWithEmptySourceUrls = { 
+        ...mockItem, 
+        sourceUrls: [], 
+        sourceUrl: 'https://slack.com/archives/C123/p789' 
+      }
+      render(<ContentDetailModal item={itemWithEmptySourceUrls} onClose={mockOnClose} />)
+      expect(screen.getByText('Key Messages')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: /Message 1/i }))
+      expect(shellOpen).toHaveBeenCalledWith('https://slack.com/archives/C123/p789')
     })
 
     it('shows Key Messages section with single sourceUrl', () => {
@@ -270,10 +293,10 @@ describe('ContentDetailModal', () => {
     })
 
     it('displays message count when present', () => {
-      const itemWithMessageCount = { ...mockItem, messageCount: 42 }
+      const itemWithMessageCount = { ...mockItem, messageCount: 42, sourceUrl: undefined, sourceUrls: undefined }
       render(<ContentDetailModal item={itemWithMessageCount} onClose={mockOnClose} />)
       expect(screen.getByText('42')).toBeInTheDocument()
-      expect(screen.getByText(/messages/i)).toBeInTheDocument()
+      expect(screen.getByText(/Based on.*messages/i)).toBeInTheDocument()
     })
 
     it('displays Sources heading when any source info is present', () => {
