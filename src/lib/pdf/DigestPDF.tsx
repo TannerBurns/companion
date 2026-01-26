@@ -315,24 +315,16 @@ function DigestItemRow({ item }: DigestItemRowProps) {
         <ImportanceIndicator score={item.importanceScore} />
       </View>
 
-      {/* Source Links */}
-      {(item.sourceUrls?.length || item.sourceUrl) && (
+      {/* Key Messages */}
+      {item.sourceUrls && item.sourceUrls.length > 0 && (
         <View style={styles.linksContainer}>
-          <Text style={styles.linksLabel}>
-            {(item.sourceUrls?.length ?? 0) > 1 ? 'View Original Messages:' : 'View in Slack:'}
-          </Text>
+          <Text style={styles.linksLabel}>Key Messages:</Text>
           <View style={styles.linksRow}>
-            {item.sourceUrls && item.sourceUrls.length > 0 ? (
-              item.sourceUrls.map((url, idx) => (
-                <Link key={idx} src={url} style={styles.linkButton}>
-                  {(item.sourceUrls?.length ?? 0) > 1 ? `Message ${idx + 1}` : 'Open in Slack'}
-                </Link>
-              ))
-            ) : item.sourceUrl ? (
-              <Link src={item.sourceUrl} style={styles.linkButton}>
-                Open in Slack
+            {item.sourceUrls.map((url, idx) => (
+              <Link key={idx} src={url} style={styles.linkButton}>
+                Message {idx + 1}
               </Link>
-            ) : null}
+            ))}
           </View>
         </View>
       )}

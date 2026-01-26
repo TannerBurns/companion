@@ -1,10 +1,9 @@
 import { useState } from 'react'
-import { ExternalLink, ChevronDown, ChevronUp, Hash, Users, MessageSquare, ArrowRight } from 'lucide-react'
+import { ChevronDown, ChevronUp, Hash, Users, MessageSquare } from 'lucide-react'
 import { Card } from './ui/Card'
 import { CategoryBadge } from './CategoryBadge'
 import { SourceIcon } from './SourceIcon'
 import { ImportanceIndicator } from './ImportanceIndicator'
-import { openUrl } from '../lib/openUrl'
 import type { DigestItem } from '../lib/api'
 
 interface ContentCardProps {
@@ -98,8 +97,8 @@ export function ContentCard({ item, onViewDetail }: ContentCardProps) {
         </div>
       )}
 
-      <div className="mt-3 flex items-center justify-between">
-        {item.highlights && item.highlights.length > 0 ? (
+      {item.highlights && item.highlights.length > 0 && (
+        <div className="mt-3">
           <button
             onClick={(e) => {
               e.stopPropagation()
@@ -110,36 +109,8 @@ export function ContentCard({ item, onViewDetail }: ContentCardProps) {
             {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
             {expanded ? 'Less' : 'More'}
           </button>
-        ) : (
-          <div />
-        )}
-
-        <div className="flex items-center gap-2">
-          {(item.channels && item.channels.length > 1) || (item.sourceUrls && item.sourceUrls.length > 1) ? (
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                onViewDetail?.(item.id)
-              }}
-              className="flex items-center gap-1 text-xs text-primary-500 hover:underline"
-            >
-              <ArrowRight className="h-3 w-3" />
-              View Details
-            </button>
-          ) : item.sourceUrls?.[0] || item.sourceUrl ? (
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                openUrl(item.sourceUrls?.[0] || item.sourceUrl || '')
-              }}
-              className="flex items-center gap-1 text-xs text-primary-500 hover:underline"
-            >
-              <ExternalLink className="h-3 w-3" />
-              View in Slack
-            </button>
-          ) : null}
         </div>
-      </div>
+      )}
     </Card>
   )
 }
