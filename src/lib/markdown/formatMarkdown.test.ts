@@ -356,19 +356,31 @@ describe('formatDigestMarkdown', () => {
       expect(result).not.toContain('**Messages:**')
     })
 
-    it('formats source URL as link', () => {
+    it('falls back to sourceUrl when sourceUrls is undefined', () => {
       const result = formatDigestMarkdown({
         digest: createDigest({
-          items: [createItem({ sourceUrl: 'https://example.com/item' })],
+          items: [createItem({ sourceUrl: 'https://example.com/item', sourceUrls: undefined })],
         }),
         type: 'daily',
         dateLabel: 'January 15, 2024',
       })
 
-      expect(result).toContain('**Link:** [View Source](https://example.com/item)')
+      expect(result).toContain('**Key Messages:** [Message 1](https://example.com/item)')
     })
 
-    it('formats single sourceUrl in sourceUrls array as View in Slack link', () => {
+    it('does not include Key Messages when both sourceUrls and sourceUrl are undefined', () => {
+      const result = formatDigestMarkdown({
+        digest: createDigest({
+          items: [createItem({ sourceUrl: undefined, sourceUrls: undefined })],
+        }),
+        type: 'daily',
+        dateLabel: 'January 15, 2024',
+      })
+
+      expect(result).not.toContain('**Key Messages:**')
+    })
+
+    it('formats single sourceUrl in sourceUrls array as Key Messages link', () => {
       const result = formatDigestMarkdown({
         digest: createDigest({
           items: [createItem({
@@ -380,7 +392,7 @@ describe('formatDigestMarkdown', () => {
         dateLabel: 'January 15, 2024',
       })
 
-      expect(result).toContain('**Link:** [View in Slack](https://workspace.slack.com/archives/C123/p456)')
+      expect(result).toContain('**Key Messages:** [Message 1](https://workspace.slack.com/archives/C123/p456)')
     })
 
     it('formats multiple sourceUrls as numbered message links', () => {
@@ -399,13 +411,13 @@ describe('formatDigestMarkdown', () => {
         dateLabel: 'January 15, 2024',
       })
 
-      expect(result).toContain('**Links:**')
+      expect(result).toContain('**Key Messages:**')
       expect(result).toContain('[Message 1](https://workspace.slack.com/archives/C123/p111)')
       expect(result).toContain('[Message 2](https://workspace.slack.com/archives/C123/p222)')
       expect(result).toContain('[Message 3](https://workspace.slack.com/archives/C123/p333)')
     })
 
-    it('prefers sourceUrls over sourceUrl when both present', () => {
+    it('uses sourceUrls when both sourceUrls and sourceUrl are present', () => {
       const result = formatDigestMarkdown({
         digest: createDigest({
           items: [createItem({
@@ -417,11 +429,11 @@ describe('formatDigestMarkdown', () => {
         dateLabel: 'January 15, 2024',
       })
 
-      expect(result).toContain('[View in Slack](https://workspace.slack.com/archives/C123/p456)')
+      expect(result).toContain('**Key Messages:** [Message 1](https://workspace.slack.com/archives/C123/p456)')
       expect(result).not.toContain('fallback')
     })
 
-    it('falls back to sourceUrl when sourceUrls is empty', () => {
+    it('falls back to sourceUrl when sourceUrls is empty array', () => {
       const result = formatDigestMarkdown({
         digest: createDigest({
           items: [createItem({
@@ -433,7 +445,22 @@ describe('formatDigestMarkdown', () => {
         dateLabel: 'January 15, 2024',
       })
 
-      expect(result).toContain('[View Source](https://example.com/fallback)')
+      expect(result).toContain('**Key Messages:** [Message 1](https://example.com/fallback)')
+    })
+
+    it('does not include Key Messages when sourceUrls is empty and sourceUrl is undefined', () => {
+      const result = formatDigestMarkdown({
+        digest: createDigest({
+          items: [createItem({
+            sourceUrls: [],
+            sourceUrl: undefined,
+          })],
+        }),
+        type: 'daily',
+        dateLabel: 'January 15, 2024',
+      })
+
+      expect(result).not.toContain('**Key Messages:**')
     })
 
     it('omits metadata line when no optional fields present', () => {
@@ -444,6 +471,7 @@ describe('formatDigestMarkdown', () => {
             people: undefined,
             messageCount: undefined,
             sourceUrl: undefined,
+            sourceUrls: undefined,
           })],
         }),
         type: 'daily',
@@ -453,7 +481,7 @@ describe('formatDigestMarkdown', () => {
       expect(result).not.toContain('**Channels:**')
       expect(result).not.toContain('**People:**')
       expect(result).not.toContain('**Messages:**')
-      expect(result).not.toContain('**Link:**')
+      expect(result).not.toContain('**Key Messages:**')
     })
   })
 

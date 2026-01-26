@@ -99,6 +99,40 @@ export function ContentDetailModal({ item, onClose }: ContentDetailModalProps) {
             </div>
           )}
 
+          {/* Key Messages */}
+          {(() => {
+            // Prefer sourceUrls array, fallback to sourceUrl if available
+            const urls = item.sourceUrls && item.sourceUrls.length > 0
+              ? item.sourceUrls
+              : item.sourceUrl
+                ? [item.sourceUrl]
+                : []
+            
+            if (urls.length === 0) return null
+            
+            return (
+              <div className="mb-6">
+                <h3 className="text-sm font-medium text-foreground mb-2">Key Messages</h3>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Jump directly to the most relevant messages in the original conversation
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {urls.map((url, index) => (
+                    <Button
+                      key={index}
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => openUrl(url)}
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      Message {index + 1}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )
+          })()}
+
           {/* Source Info - Channels, People, Message Count */}
           {(item.channels?.length || item.people?.length || item.messageCount) && (
             <div className="p-4 bg-muted/50 rounded-lg space-y-3">
@@ -159,43 +193,6 @@ export function ContentDetailModal({ item, onClose }: ContentDetailModalProps) {
           )}
         </div>
 
-        {/* Footer */}
-        {(item.sourceUrls?.length || item.sourceUrl) && (
-          <div className="flex flex-col gap-3 p-6 border-t border-border bg-muted/30">
-            {item.sourceUrls && item.sourceUrls.length > 1 ? (
-              <>
-                <div className="text-sm font-medium text-foreground">
-                  Jump to Key Messages
-                </div>
-                <div className="text-xs text-muted-foreground mb-1">
-                  AI-selected messages most relevant for context
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {item.sourceUrls.map((url, index) => (
-                    <Button
-                      key={index}
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => openUrl(url)}
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" />
-                      Message {index + 1}
-                    </Button>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <div className="flex items-center justify-end">
-                <Button
-                  onClick={() => openUrl(item.sourceUrls?.[0] || item.sourceUrl || '')}
-                >
-                  <ExternalLink className="h-4 w-4" />
-                  View in {item.source === 'slack' ? 'Slack' : item.source === 'confluence' ? 'Confluence' : item.source === 'ai' ? 'AI' : 'Source'}
-                </Button>
-              </div>
-            )}
-          </div>
-        )}
       </div>
     </div>
   )

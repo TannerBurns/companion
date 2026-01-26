@@ -138,33 +138,65 @@ describe('ContentDetailModal', () => {
     })
   })
 
-  describe('footer with source URL', () => {
-    it('shows View in Slack button when sourceUrl exists and source is slack', () => {
-      render(<ContentDetailModal item={mockItem} onClose={mockOnClose} />)
-      expect(screen.getByRole('button', { name: /View in Slack/i })).toBeInTheDocument()
+  describe('key messages section', () => {
+    it('does not show Key Messages section when both sourceUrls and sourceUrl are undefined', () => {
+      const itemWithoutUrls = { ...mockItem, sourceUrls: undefined, sourceUrl: undefined }
+      render(<ContentDetailModal item={itemWithoutUrls} onClose={mockOnClose} />)
+      expect(screen.queryByText('Key Messages')).not.toBeInTheDocument()
     })
 
-    it('shows View in Confluence button when source is confluence', () => {
-      const confluenceItem = { ...mockItem, source: 'confluence' as const }
-      render(<ContentDetailModal item={confluenceItem} onClose={mockOnClose} />)
-      expect(screen.getByRole('button', { name: /View in Confluence/i })).toBeInTheDocument()
+    it('does not show Key Messages section when sourceUrls is empty and sourceUrl is undefined', () => {
+      const itemWithEmptyUrls = { ...mockItem, sourceUrls: [], sourceUrl: undefined }
+      render(<ContentDetailModal item={itemWithEmptyUrls} onClose={mockOnClose} />)
+      expect(screen.queryByText('Key Messages')).not.toBeInTheDocument()
     })
 
-    it('does not show footer when sourceUrl is undefined', () => {
-      const itemWithoutUrl = { ...mockItem, sourceUrl: undefined }
-      render(<ContentDetailModal item={itemWithoutUrl} onClose={mockOnClose} />)
-      expect(screen.queryByRole('button', { name: /View in/i })).not.toBeInTheDocument()
+    it('falls back to sourceUrl when sourceUrls is undefined', () => {
+      const itemWithOnlySourceUrl = { 
+        ...mockItem, 
+        sourceUrls: undefined, 
+        sourceUrl: 'https://slack.com/archives/C123/p789' 
+      }
+      render(<ContentDetailModal item={itemWithOnlySourceUrl} onClose={mockOnClose} />)
+      expect(screen.getByText('Key Messages')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Message 1/i })).toBeInTheDocument()
     })
 
-    it('opens sourceUrl using shell API when View button is clicked', async () => {
-      render(<ContentDetailModal item={mockItem} onClose={mockOnClose} />)
-      fireEvent.click(screen.getByRole('button', { name: /View in Slack/i }))
+    it('falls back to sourceUrl when sourceUrls is empty array', () => {
+      const itemWithEmptySourceUrls = { 
+        ...mockItem, 
+        sourceUrls: [], 
+        sourceUrl: 'https://slack.com/archives/C123/p789' 
+      }
+      render(<ContentDetailModal item={itemWithEmptySourceUrls} onClose={mockOnClose} />)
+      expect(screen.getByText('Key Messages')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: /Message 1/i }))
+      expect(shellOpen).toHaveBeenCalledWith('https://slack.com/archives/C123/p789')
+    })
+
+    it('shows Key Messages section with single sourceUrl', () => {
+      const itemWithSingleUrl = {
+        ...mockItem,
+        sourceUrls: ['https://workspace.slack.com/archives/C123/p111'],
+      }
+      render(<ContentDetailModal item={itemWithSingleUrl} onClose={mockOnClose} />)
+      expect(screen.getByText('Key Messages')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Message 1/i })).toBeInTheDocument()
+    })
+
+    it('opens sourceUrl using shell API when message button is clicked', async () => {
+      const itemWithUrl = {
+        ...mockItem,
+        sourceUrls: ['https://slack.com/archives/C123/p456'],
+      }
+      render(<ContentDetailModal item={itemWithUrl} onClose={mockOnClose} />)
+      fireEvent.click(screen.getByRole('button', { name: /Message 1/i }))
       expect(shellOpen).toHaveBeenCalledWith('https://slack.com/archives/C123/p456')
     })
   })
 
   describe('multiple source URLs', () => {
-    it('displays Jump to Key Messages heading when multiple sourceUrls exist', () => {
+    it('displays Key Messages heading when multiple sourceUrls exist', () => {
       const itemWithMultipleUrls = {
         ...mockItem,
         sourceUrls: [
@@ -173,7 +205,7 @@ describe('ContentDetailModal', () => {
         ],
       }
       render(<ContentDetailModal item={itemWithMultipleUrls} onClose={mockOnClose} />)
-      expect(screen.getByText('Jump to Key Messages')).toBeInTheDocument()
+      expect(screen.getByText('Key Messages')).toBeInTheDocument()
     })
 
     it('displays individual message buttons for each sourceUrl', () => {
@@ -204,18 +236,18 @@ describe('ContentDetailModal', () => {
       expect(shellOpen).toHaveBeenCalledWith('https://workspace.slack.com/archives/C123/p222')
     })
 
-    it('uses single View in Slack button when only one sourceUrl in array', () => {
+    it('shows Key Messages with single sourceUrl in array', () => {
       const itemWithSingleUrlArray = {
         ...mockItem,
         sourceUrls: ['https://workspace.slack.com/archives/C123/p111'],
         sourceUrl: undefined,
       }
       render(<ContentDetailModal item={itemWithSingleUrlArray} onClose={mockOnClose} />)
-      expect(screen.queryByText('Jump to Key Messages')).not.toBeInTheDocument()
-      expect(screen.getByRole('button', { name: /View in Slack/i })).toBeInTheDocument()
+      expect(screen.getByText('Key Messages')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Message 1/i })).toBeInTheDocument()
     })
 
-    it('prefers sourceUrls over sourceUrl when both present', () => {
+    it('uses sourceUrls when both sourceUrls and sourceUrl are present', () => {
       const itemWithBoth = {
         ...mockItem,
         sourceUrls: [
@@ -225,12 +257,12 @@ describe('ContentDetailModal', () => {
         sourceUrl: 'https://fallback.slack.com',
       }
       render(<ContentDetailModal item={itemWithBoth} onClose={mockOnClose} />)
-      expect(screen.getByText('Jump to Key Messages')).toBeInTheDocument()
+      expect(screen.getByText('Key Messages')).toBeInTheDocument()
       fireEvent.click(screen.getByRole('button', { name: /Message 1/i }))
       expect(shellOpen).toHaveBeenCalledWith('https://workspace.slack.com/archives/C123/p111')
     })
 
-    it('displays AI context message when multiple sourceUrls exist', () => {
+    it('displays context message about key messages', () => {
       const itemWithMultipleUrls = {
         ...mockItem,
         sourceUrls: [
@@ -239,7 +271,7 @@ describe('ContentDetailModal', () => {
         ],
       }
       render(<ContentDetailModal item={itemWithMultipleUrls} onClose={mockOnClose} />)
-      expect(screen.getByText(/AI-selected messages/i)).toBeInTheDocument()
+      expect(screen.getByText(/most relevant messages/i)).toBeInTheDocument()
     })
   })
 
@@ -261,10 +293,10 @@ describe('ContentDetailModal', () => {
     })
 
     it('displays message count when present', () => {
-      const itemWithMessageCount = { ...mockItem, messageCount: 42 }
+      const itemWithMessageCount = { ...mockItem, messageCount: 42, sourceUrl: undefined, sourceUrls: undefined }
       render(<ContentDetailModal item={itemWithMessageCount} onClose={mockOnClose} />)
       expect(screen.getByText('42')).toBeInTheDocument()
-      expect(screen.getByText(/messages/i)).toBeInTheDocument()
+      expect(screen.getByText(/Based on.*messages/i)).toBeInTheDocument()
     })
 
     it('displays Sources heading when any source info is present', () => {

@@ -47,17 +47,16 @@ function formatItem(item: DigestItem): string {
     lines.push('')
   }
 
-  // Add source links - prefer multiple sourceUrls, fall back to single sourceUrl
-  if (item.sourceUrls && item.sourceUrls.length > 0) {
-    if (item.sourceUrls.length === 1) {
-      lines.push(`**Link:** [View in Slack](${item.sourceUrls[0]})`)
-    } else {
-      const links = item.sourceUrls.map((url, i) => `[Message ${i + 1}](${url})`).join(' | ')
-      lines.push(`**Links:** ${links}`)
-    }
-    lines.push('')
-  } else if (item.sourceUrl) {
-    lines.push(`**Link:** [View Source](${item.sourceUrl})`)
+  // Add key message links - prefer sourceUrls, fallback to sourceUrl
+  const urls = item.sourceUrls && item.sourceUrls.length > 0
+    ? item.sourceUrls
+    : item.sourceUrl
+      ? [item.sourceUrl]
+      : []
+  
+  if (urls.length > 0) {
+    const links = urls.map((url, i) => `[Message ${i + 1}](${url})`).join(' | ')
+    lines.push(`**Key Messages:** ${links}`)
     lines.push('')
   }
 
