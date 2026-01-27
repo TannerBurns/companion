@@ -262,6 +262,7 @@ impl SlackClient {
         &self,
         channel_id: &str,
         oldest: Option<&str>,
+        latest: Option<&str>,
         cursor: Option<&str>,
         limit: usize,
     ) -> Result<ChannelHistoryResponse, SlackError> {
@@ -276,6 +277,10 @@ impl SlackClient {
         
         if let Some(ts) = oldest {
             params.push(("oldest", ts));
+        }
+        
+        if let Some(ts) = latest {
+            params.push(("latest", ts));
         }
         
         if let Some(c) = cursor {
@@ -531,7 +536,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_channel_history_requires_auth() {
         let client = SlackClient::new("id".into(), "secret".into());
-        let result = client.get_channel_history("C123", None, None, 100).await;
+        let result = client.get_channel_history("C123", None, None, None, 100).await;
         
         assert!(result.is_err());
         let err = result.unwrap_err();

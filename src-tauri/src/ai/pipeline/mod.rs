@@ -249,6 +249,100 @@ impl ProcessingPipeline {
             .map_err(|e| e.to_string())
     }
 
+    /// Process batch for a specific date.
+    pub async fn process_batch_for_date(&self, date_str: &str, timezone_offset_minutes: i32) -> Result<i32, String> {
+        let target_date = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
+            .map_err(|e| format!("Invalid date format: {}", e))?;
+        
+        let offset = chrono::FixedOffset::west_opt(timezone_offset_minutes * 60)
+            .unwrap_or(chrono::FixedOffset::east_opt(0).unwrap());
+        
+        let local_midnight = target_date
+            .and_hms_opt(0, 0, 0)
+            .ok_or("Invalid date")?
+            .and_local_timezone(offset)
+            .single()
+            .ok_or("Ambiguous or invalid local time")?;
+        
+        let start_ts = local_midnight.with_timezone(&Utc).timestamp_millis();
+        let end_ts = start_ts + 86400 * 1000;
+
+        let items: Vec<ContentItemRow> = sqlx::query_as(
+            "SELECT ci.id, ci.source, ci.content_type, ci.title, ci.body, 
+                    ci.author_id, ci.channel_or_project, ci.source_url, ci.parent_id, ci.created_at
+             FROM content_items ci
+             LEFT JOIN ai_summaries s ON ci.id = s.content_item_id
+             WHERE s.id IS NULL AND ci.created_at >= ? AND ci.created_at < ?
+             ORDER BY ci.created_at ASC"
+        )
+        .bind(start_ts)
+        .bind(end_ts)
+        .fetch_all(self.db.pool())
+        .await
+        .map_err(|e| e.to_string())?;
+
+        if items.is_empty() {
+            tracing::info!("No unprocessed items for {}", date_str);
+            return Ok(0);
+        }
+
+        tracing::info!("Processing {} items in batch for {}", items.len(), date_str);
+        let user_map = self.load_user_map().await.unwrap_or_default();
+
+        let existing_topic_rows: Vec<ExistingTopicRow> = sqlx::query_as(
+            "SELECT id, summary, category, importance_score, entities
+             FROM ai_summaries
+             WHERE summary_type = 'group' AND generated_at >= ? AND generated_at < ?
+             ORDER BY importance_score DESC"
+        )
+        .bind(start_ts)
+        .bind(end_ts)
+        .fetch_all(self.db.pool())
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let (mut existing_message_ids_map, existing_topics) = convert_existing_topics(&existing_topic_rows);
+        tracing::info!("Found {} existing topic groups for {}", existing_topics.len(), date_str);
+
+        let (messages_for_prompt, _item_ids) = self.build_messages_for_prompt(&items, &user_map).await;
+
+        if messages_for_prompt.is_empty() {
+            tracing::info!("All items were empty, nothing to process");
+            return Ok(0);
+        }
+
+        let result = if messages_for_prompt.len() >= HIERARCHICAL_TOTAL_THRESHOLD {
+            tracing::info!(
+                "Using hierarchical summarization for {} messages",
+                messages_for_prompt.len()
+            );
+            
+            let mut messages_by_channel: HashMap<String, Vec<MessageForPrompt>> = HashMap::new();
+            for msg in messages_for_prompt {
+                messages_by_channel
+                    .entry(msg.channel.clone())
+                    .or_default()
+                    .push(msg);
+            }
+            
+            hierarchical::process_hierarchical(&self.gemini, date_str, messages_by_channel).await?
+        } else {
+            self.process_batch_direct(date_str, messages_for_prompt, &existing_topics).await?
+        };
+
+        let stored_count = storage::store_results(self.db.pool(), &result, date_str, &mut existing_message_ids_map).await?;
+
+        tracing::info!(
+            "Batch processing complete for {}: {} groups (updated/new), {} ungrouped, {} action items",
+            date_str,
+            result.groups.len(),
+            result.ungrouped.len(),
+            result.action_items.len()
+        );
+
+        Ok(stored_count)
+    }
+
     /// Generate daily digest for a specific date.
     pub async fn generate_daily_digest(&self, date: &str) -> Result<String, String> {
         let parsed_date = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")

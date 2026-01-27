@@ -364,3 +364,52 @@ pub async fn sync_slack_now(db: Arc<Database>, crypto: Arc<CryptoService>) -> Re
     tracing::info!("Slack sync completed: {} items synced", result.items_synced);
     Ok(result.items_synced)
 }
+
+/// Sync Slack data for a specific historical date.
+pub async fn sync_slack_historical_day(
+    db: Arc<Database>,
+    crypto: Arc<CryptoService>,
+    date_str: &str,
+    timezone_offset_minutes: i32,
+) -> Result<i32, String> {
+    let result: Option<(String,)> = sqlx::query_as(
+        "SELECT encrypted_data FROM credentials WHERE id = 'slack'"
+    )
+    .fetch_optional(db.pool())
+    .await
+    .map_err(|e| e.to_string())?;
+    
+    let encrypted = result.ok_or("Slack not connected")?;
+    
+    let tokens_json = crypto
+        .decrypt_string(&encrypted.0)
+        .map_err(|e| e.to_string())?;
+    let tokens: SlackTokens = serde_json::from_str(&tokens_json)
+        .map_err(|e| e.to_string())?;
+    
+    tracing::info!(
+        "Starting historical Slack sync for team: {}, date: {}",
+        tokens.team_name,
+        date_str
+    );
+    
+    let client = SlackClient::new(String::new(), String::new())
+        .with_token(tokens.access_token.clone())
+        .with_team_id(tokens.team_id.clone());
+    
+    let sync_service = SlackSyncService::new(client, db.clone(), crypto)
+        .with_team_domain(tokens.team_domain);
+    
+    let result = sync_service
+        .sync_historical_day(date_str, timezone_offset_minutes)
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    tracing::info!(
+        "Historical Slack sync completed for {}: {} items synced",
+        date_str,
+        result.items_synced
+    );
+    
+    Ok(result.items_synced)
+}

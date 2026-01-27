@@ -265,6 +265,19 @@ describe('useAppStore', () => {
         expect(localActivities[0].status).toBe('running')
       })
 
+      it('supports historical_resync activity type', () => {
+        useAppStore.getState().addLocalActivity({
+          type: 'historical_resync',
+          message: 'Resyncing January 25, 2026...',
+          status: 'running',
+        })
+        
+        const { localActivities } = useAppStore.getState()
+        expect(localActivities).toHaveLength(1)
+        expect(localActivities[0].type).toBe('historical_resync')
+        expect(localActivities[0].message).toBe('Resyncing January 25, 2026...')
+      })
+
       it('generates unique ID for each activity', () => {
         const id1 = useAppStore.getState().addLocalActivity({
           type: 'pdf_export',

@@ -109,6 +109,9 @@ export const api = {
   startSync: (sources?: string[], timezoneOffset?: number) =>
     invoke<{ itemsSynced: number; channelsProcessed: number; errors: string[] }>('start_sync', { sources, timezoneOffset }),
 
+  resyncHistoricalDay: (date: string, timezoneOffset: number) =>
+    invoke<{ itemsSynced: number; channelsProcessed: number; errors: string[] }>('resync_historical_day', { date, timezoneOffset }),
+
   getSyncStatus: () =>
     invoke<SyncStatus>('get_sync_status'),
 

@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use chrono::Utc;
 use sqlx::{Pool, Sqlite};
 use super::topics::{generate_topic_id, merge_message_ids};
 use super::super::prompts::GroupedAnalysisResult;
@@ -31,13 +30,24 @@ pub async fn fetch_message_ids_from_db(
 }
 
 /// Store processing results to the database.
+/// 
+/// The `generated_at` timestamp is set to noon (12:00) of the target date to ensure
+/// items appear when querying for that day's digest regardless of timezone.
 pub async fn store_results(
     pool: &Pool<Sqlite>,
     result: &GroupedAnalysisResult,
     date_str: &str,
     existing_message_ids_map: &mut HashMap<String, Vec<String>>,
 ) -> Result<i32, String> {
-    let now = Utc::now().timestamp_millis();
+    // Use noon of the target date for generated_at, so items appear in that day's digest
+    let target_date = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
+        .map_err(|e| format!("Invalid date format: {}", e))?;
+    let noon_utc = target_date
+        .and_hms_opt(12, 0, 0)
+        .ok_or("Invalid date")?
+        .and_utc()
+        .timestamp_millis();
+    let generated_at = noon_utc;
     let mut stored_count = 0;
 
     // Store topic groups
@@ -118,7 +128,7 @@ pub async fn store_results(
             .bind(0.9)
             .bind(group.importance_score)
             .bind(&entities_json)
-            .bind(now)
+            .bind(generated_at)
             .bind(&final_topic_id)
             .execute(pool)
             .await
@@ -136,7 +146,7 @@ pub async fn store_results(
             .bind(0.9)
             .bind(group.importance_score)
             .bind(&entities_json)
-            .bind(now)
+            .bind(generated_at)
             .execute(pool)
             .await
             .map_err(|e| e.to_string())?;
@@ -156,7 +166,7 @@ pub async fn store_results(
             .bind(format!("Part of group: {}", group.topic))
             .bind(&group.category)
             .bind(group.importance_score)
-            .bind(now)
+            .bind(generated_at)
             .execute(pool)
             .await;
         }
@@ -175,7 +185,7 @@ pub async fn store_results(
         .bind(&ungrouped.summary)
         .bind(&ungrouped.category)
         .bind(ungrouped.importance_score)
-        .bind(now)
+        .bind(generated_at)
         .execute(pool)
         .await
         .map_err(|e| e.to_string())?;
@@ -200,7 +210,7 @@ pub async fn store_results(
         )
         .bind(&result.daily_summary)
         .bind(serde_json::to_string(&result.key_themes).unwrap_or_default())
-        .bind(now)
+        .bind(generated_at)
         .bind(&daily_digest_id)
         .execute(pool)
         .await
@@ -214,7 +224,7 @@ pub async fn store_results(
         .bind(&daily_digest_id)
         .bind(&result.daily_summary)
         .bind(serde_json::to_string(&result.key_themes).unwrap_or_default())
-        .bind(now)
+        .bind(generated_at)
         .execute(pool)
         .await
         .map_err(|e| e.to_string())?;
