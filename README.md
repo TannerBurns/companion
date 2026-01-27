@@ -128,4 +128,4 @@ pnpm lint
 
 ## License
 
-MIT
+Proprietary
