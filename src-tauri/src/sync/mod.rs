@@ -9,5 +9,5 @@ pub mod queue;
 // Re-export commonly used types
 pub use slack::{SlackClient, SlackSyncService, SlackTokens, SyncResult, SlackChannel, SlackChannelSelection, SlackConnectionStatus, SlackUser};
 pub use atlassian::{AtlassianClient, AtlassianSyncService, AtlassianTokens, CloudResource};
-pub use background::{BackgroundSyncService, sync_slack_now, get_last_sync_at};
+pub use background::{BackgroundSyncService, sync_slack_now, sync_slack_historical_day, get_last_sync_at};
 pub use queue::{SyncQueue, SyncRequest};

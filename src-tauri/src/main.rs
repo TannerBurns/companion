@@ -99,6 +99,7 @@ fn main() {
             commands::get_weekly_digest,
             commands::start_sync,
             commands::get_sync_status,
+            commands::resync_historical_day,
             commands::save_api_key,
             commands::has_api_key,
             commands::get_preferences,

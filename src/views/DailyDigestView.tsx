@@ -1,12 +1,13 @@
 import { useState, useCallback, useMemo } from 'react'
 import { format, subDays, addDays, isToday, isFuture } from 'date-fns'
-import { ChevronLeft, ChevronRight, Calendar, PanelLeftClose, PanelLeft, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Calendar, PanelLeftClose, PanelLeft, X, RefreshCw } from 'lucide-react'
 import { useDailyDigest } from '../hooks/useDigest'
 import { ContentCard, ContentDetailModal, ExportMenu } from '../components'
 import { Button } from '../components/ui/Button'
 import { useAppStore } from '../store'
 import { exportDigestPDF } from '../lib/pdf'
 import { exportDigestMarkdown } from '../lib/markdown'
+import { api } from '../lib/api'
 import {
   filterDigestItems,
   countByImportance,
@@ -30,12 +31,53 @@ export function DailyDigestView() {
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
   const [selectedItem, setSelectedItem] = useState<DigestItem | null>(null)
   const [isExporting, setIsExporting] = useState(false)
+  const [isResyncing, setIsResyncing] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
 
   const dateStr = format(date, 'yyyy-MM-dd')
   // Send timezone offset in minutes (e.g., PST is -480, EST is -300)
   const timezoneOffset = date.getTimezoneOffset()
-  const { data, isLoading, error } = useDailyDigest(dateStr, timezoneOffset)
+  const { data, isLoading, error, refetch } = useDailyDigest(dateStr, timezoneOffset)
+
+  const isPastDate = !isToday(date) && !isFuture(date)
+
+  const handleResyncDay = useCallback(async () => {
+    if (isResyncing) return
+    setIsResyncing(true)
+    
+    const dateLabel = format(date, 'MMMM d, yyyy')
+    const activityId = addLocalActivity({
+      type: 'historical_resync',
+      message: `Resyncing ${dateLabel}...`,
+      status: 'running',
+    })
+    
+    try {
+      const result = await api.resyncHistoricalDay(dateStr, timezoneOffset)
+      
+      if (result.errors.length > 0) {
+        updateLocalActivity(activityId, {
+          status: 'failed',
+          error: result.errors.join(', '),
+        })
+      } else {
+        updateLocalActivity(activityId, {
+          status: 'completed',
+          message: `Resynced ${dateLabel} (${result.itemsSynced} items)`,
+        })
+      }
+      
+      await refetch()
+    } catch (error) {
+      console.error('Failed to resync day:', error)
+      updateLocalActivity(activityId, {
+        status: 'failed',
+        error: error instanceof Error ? error.message : 'Resync failed',
+      })
+    } finally {
+      setIsResyncing(false)
+    }
+  }, [date, dateStr, timezoneOffset, isResyncing, addLocalActivity, updateLocalActivity, refetch])
 
   const filteredItems = useMemo(
     () => filterDigestItems(data?.items ?? [], filter, importanceFilter, sourceFilter),
@@ -381,11 +423,23 @@ export function DailyDigestView() {
                 ? 'No items for this day'
                 : 'No items match filters'}
             </h3>
-            <p className="text-muted-foreground max-w-sm mx-auto">
+            <p className="text-muted-foreground max-w-sm mx-auto mb-6">
               {filter === 'all' && importanceFilter === 'all' && sourceFilter === 'all'
-                ? 'Use the sync button in the header to get the latest updates.'
+                ? isPastDate
+                  ? 'This day may have content that was not synced. Try resyncing to fetch historical messages.'
+                  : 'Use the sync button in the header to get the latest updates.'
                 : 'Try adjusting your filter selections.'}
             </p>
+            {isPastDate && filter === 'all' && importanceFilter === 'all' && sourceFilter === 'all' && (
+              <Button
+                onClick={handleResyncDay}
+                disabled={isResyncing}
+                className="inline-flex items-center gap-2"
+              >
+                <RefreshCw className={`h-4 w-4 ${isResyncing ? 'animate-spin' : ''}`} />
+                {isResyncing ? 'Resyncing...' : 'Resync This Day'}
+              </Button>
+            )}
           </div>
         ) : (
           <div className="grid gap-4">
