@@ -12,6 +12,7 @@ use super::types::{MessageForPrompt, HIERARCHICAL_CHANNEL_THRESHOLD};
 /// * `gemini` - The Gemini client for AI requests
 /// * `date_str` - The date string in YYYY-MM-DD format
 /// * `messages_by_channel` - Messages grouped by channel name
+/// * `user_guidance` - Optional user-provided guidance for summarization preferences
 ///
 /// # Returns
 /// A GroupedAnalysisResult containing topic groups and ungrouped items
@@ -19,6 +20,7 @@ pub async fn process_hierarchical(
     gemini: &GeminiClient,
     date_str: &str,
     messages_by_channel: HashMap<String, Vec<MessageForPrompt>>,
+    user_guidance: Option<&str>,
 ) -> Result<GroupedAnalysisResult, String> {
     let mut channel_summaries: Vec<ChannelSummary> = Vec::new();
     let mut small_channel_messages: Vec<MessageForPrompt> = Vec::new();
@@ -34,7 +36,7 @@ pub async fn process_hierarchical(
             let messages_json = serde_json::to_string_pretty(&messages)
                 .map_err(|e| e.to_string())?;
             
-            let prompt = prompts::channel_summary_prompt(&channel, None, &messages_json);
+            let prompt = prompts::channel_summary_prompt(&channel, None, &messages_json, user_guidance);
             
             match gemini.generate_json::<ChannelSummary>(&prompt).await {
                 Ok(mut summary) => {
@@ -72,6 +74,7 @@ pub async fn process_hierarchical(
         date_str,
         &channel_summaries_json,
         ungrouped_json.as_deref(),
+        user_guidance,
     );
     
     let result: GroupedAnalysisResult = gemini

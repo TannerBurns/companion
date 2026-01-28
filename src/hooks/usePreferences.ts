@@ -7,6 +7,7 @@ const DEFAULT_PREFERENCES: Preferences = {
   enabledSources: [],
   enabledCategories: ['sales', 'marketing', 'product', 'engineering', 'research'],
   notificationsEnabled: true,
+  userGuidance: undefined,
 }
 
 export function usePreferences() {

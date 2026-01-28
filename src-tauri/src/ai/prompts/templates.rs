@@ -1,3 +1,20 @@
+fn format_user_guidance(guidance: Option<&str>) -> String {
+    match guidance {
+        Some(g) if !g.trim().is_empty() => {
+            format!(r##"
+USER PREFERENCES:
+The user has provided the following guidance for what they care about:
+"{}"
+
+Apply these preferences when determining what to include, prioritize, highlight, or filter out.
+Consider this guidance when scoring importance and selecting key information.
+
+"##, g.trim())
+        }
+        _ => String::new(),
+    }
+}
+
 /// Generate a prompt for analyzing Slack messages.
 pub fn slack_message_prompt(channel: &str, messages: &str) -> String {
     format!(r#"Analyze this Slack conversation from #{channel} and provide a JSON response:
@@ -79,11 +96,12 @@ Return JSON with this structure:
 }
 
 /// Generate a prompt for creating a daily digest.
-pub fn daily_digest_prompt(date: &str, items_json: &str) -> String {
+pub fn daily_digest_prompt(date: &str, items_json: &str, user_guidance: Option<&str>) -> String {
+    let guidance_section = format_user_guidance(user_guidance);
     format!(r#"Create a daily digest summary for {date} from these items:
 
 {items_json}
-
+{guidance_section}
 Return JSON with this structure:
 {{
   "summary": "3-4 sentence executive summary of the day's key activities",
@@ -97,11 +115,12 @@ Return JSON with this structure:
 }
 
 /// Generate a prompt for creating a weekly digest.
-pub fn weekly_digest_prompt(week_start: &str, daily_summaries: &str) -> String {
+pub fn weekly_digest_prompt(week_start: &str, daily_summaries: &str, user_guidance: Option<&str>) -> String {
+    let guidance_section = format_user_guidance(user_guidance);
     format!(r#"Create a weekly digest summary for the week of {week_start}:
 
 {daily_summaries}
-
+{guidance_section}
 Return JSON with this structure:
 {{
   "summary": "4-5 sentence executive summary of the week's key activities and trends",
@@ -115,17 +134,23 @@ Return JSON with this structure:
 }
 
 /// Generate a prompt for batch analysis of messages.
-/// 
+///
 /// This is a convenience wrapper around `batch_analysis_prompt_with_existing` with no existing topics.
 pub fn batch_analysis_prompt(date: &str, messages_json: &str) -> String {
-    batch_analysis_prompt_with_existing(date, messages_json, None)
+    batch_analysis_prompt_with_existing(date, messages_json, None, None)
 }
 
 /// Generate a prompt for batch analysis with optional existing topics.
-/// 
+///
 /// When existing topics are provided, the AI is instructed to merge new messages
 /// into existing topics where appropriate.
-pub fn batch_analysis_prompt_with_existing(date: &str, messages_json: &str, existing_topics: Option<&str>) -> String {
+pub fn batch_analysis_prompt_with_existing(
+    date: &str,
+    messages_json: &str,
+    existing_topics: Option<&str>,
+    user_guidance: Option<&str>,
+) -> String {
+    let guidance_section = format_user_guidance(user_guidance);
     let existing_context = if let Some(topics_json) = existing_topics {
         format!(r##"
 EXISTING TOPICS FROM EARLIER TODAY:
@@ -153,8 +178,7 @@ IMPORTANT MERGING RULES:
     };
 
     format!(r##"You are analyzing all messages from {date} across multiple Slack channels and direct messages.
-{existing_context}
-Your task is to:
+{existing_context}{guidance_section}Your task is to:
 1. Identify related discussions that span multiple channels (e.g., a product launch discussed in #product, #marketing, and #sales)
 2. Group related messages together by topic/theme
 3. Summarize each group
@@ -207,18 +231,24 @@ Guidelines:
 }
 
 /// Generate a prompt for summarizing a single channel.
-/// 
+///
 /// Used in hierarchical summarization for high-volume channels.
-pub fn channel_summary_prompt(channel: &str, purpose: Option<&str>, messages_json: &str) -> String {
+pub fn channel_summary_prompt(
+    channel: &str,
+    purpose: Option<&str>,
+    messages_json: &str,
+    user_guidance: Option<&str>,
+) -> String {
     let purpose_line = purpose
         .map(|p| format!("Channel purpose: {}\n", p))
         .unwrap_or_default();
-    
+    let guidance_section = format_user_guidance(user_guidance);
+
     format!(r##"Summarize the discussion in #{channel}.
 {purpose_line}
 Messages:
 {messages_json}
-
+{guidance_section}
 Return JSON with this structure:
 {{
   "channel": "{channel}",
@@ -236,23 +266,28 @@ Guidelines:
 }
 
 /// Generate a prompt for cross-channel grouping.
-/// 
+///
 /// Used as the second pass in hierarchical summarization to combine
 /// channel summaries into topic groups.
-pub fn cross_channel_grouping_prompt(date: &str, channel_summaries_json: &str, ungrouped_messages_json: Option<&str>) -> String {
+pub fn cross_channel_grouping_prompt(
+    date: &str,
+    channel_summaries_json: &str,
+    ungrouped_messages_json: Option<&str>,
+    user_guidance: Option<&str>,
+) -> String {
     let ungrouped_section = ungrouped_messages_json
         .map(|json| format!(r##"
 MESSAGES FROM LOW-VOLUME CHANNELS (process directly):
 {json}
 "##))
         .unwrap_or_default();
-    
+    let guidance_section = format_user_guidance(user_guidance);
+
     format!(r##"You are creating a daily digest for {date} by combining summaries from multiple Slack channels.
 
 CHANNEL SUMMARIES:
 {channel_summaries_json}
-{ungrouped_section}
-Your task is to:
+{ungrouped_section}{guidance_section}Your task is to:
 1. Identify topics that span multiple channels (cross-channel themes)
 2. Group related channel discussions together
 3. Create an executive summary of the entire day
@@ -340,14 +375,14 @@ mod tests {
 
     #[test]
     fn test_daily_digest_prompt_contains_date() {
-        let prompt = daily_digest_prompt("2024-01-15", r#"[{"summary": "test"}]"#);
+        let prompt = daily_digest_prompt("2024-01-15", r#"[{"summary": "test"}]"#, None);
         assert!(prompt.contains("2024-01-15"));
         assert!(prompt.contains("daily digest"));
     }
 
     #[test]
     fn test_weekly_digest_prompt_contains_week_start() {
-        let prompt = weekly_digest_prompt("2024-01-08", "Monday summary\nTuesday summary");
+        let prompt = weekly_digest_prompt("2024-01-08", "Monday summary\nTuesday summary", None);
         assert!(prompt.contains("2024-01-08"));
         assert!(prompt.contains("weekly digest"));
     }
@@ -367,9 +402,9 @@ mod tests {
     fn test_batch_analysis_prompt_with_existing_topics() {
         let messages = r##"[{"id": "1", "channel": "#general", "text": "More about the launch"}]"##;
         let existing_topics = r##"[{"topic_id": "topic_123", "topic": "Q1 Launch"}]"##;
-        
-        let prompt = batch_analysis_prompt_with_existing("2024-01-15", messages, Some(existing_topics));
-        
+
+        let prompt = batch_analysis_prompt_with_existing("2024-01-15", messages, Some(existing_topics), None);
+
         assert!(prompt.contains("EXISTING TOPICS FROM EARLIER TODAY"));
         assert!(prompt.contains("topic_123"));
         assert!(prompt.contains("MERGING RULES"));
@@ -378,9 +413,9 @@ mod tests {
     #[test]
     fn test_batch_analysis_prompt_without_existing_topics() {
         let messages = r##"[{"id": "1", "channel": "#general", "text": "Hello"}]"##;
-        
-        let prompt = batch_analysis_prompt_with_existing("2024-01-15", messages, None);
-        
+
+        let prompt = batch_analysis_prompt_with_existing("2024-01-15", messages, None, None);
+
         assert!(!prompt.contains("EXISTING TOPICS FROM EARLIER TODAY"));
         assert!(!prompt.contains("MERGING RULES"));
     }
@@ -388,10 +423,10 @@ mod tests {
     #[test]
     fn test_batch_analysis_prompt_backwards_compatible() {
         let messages = r##"[{"id": "1", "channel": "#test", "text": "Test"}]"##;
-        
+
         let prompt1 = batch_analysis_prompt("2024-01-15", messages);
-        let prompt2 = batch_analysis_prompt_with_existing("2024-01-15", messages, None);
-        
+        let prompt2 = batch_analysis_prompt_with_existing("2024-01-15", messages, None, None);
+
         assert!(!prompt1.contains("EXISTING TOPICS"));
         assert!(!prompt2.contains("EXISTING TOPICS"));
     }
@@ -399,18 +434,18 @@ mod tests {
     #[test]
     fn test_batch_analysis_prompt_includes_topic_id_instruction() {
         let messages = r##"[{"id": "1", "channel": "#test", "text": "Test"}]"##;
-        
-        let prompt_without = batch_analysis_prompt_with_existing("2024-01-15", messages, None);
+
+        let prompt_without = batch_analysis_prompt_with_existing("2024-01-15", messages, None, None);
         assert!(prompt_without.contains(r#""topic_id": null"#));
-        
+
         let existing = r##"[{"topic_id": "t1", "topic": "Test"}]"##;
-        let prompt_with = batch_analysis_prompt_with_existing("2024-01-15", messages, Some(existing));
+        let prompt_with = batch_analysis_prompt_with_existing("2024-01-15", messages, Some(existing), None);
         assert!(prompt_with.contains(r#""topic_id": "topic_abc123""#));
     }
 
     #[test]
     fn test_channel_summary_prompt_contains_channel() {
-        let prompt = channel_summary_prompt("general", None, "[]");
+        let prompt = channel_summary_prompt("general", None, "[]", None);
         assert!(prompt.contains("#general"));
         assert!(prompt.contains("Messages:"));
         assert!(prompt.contains("key_topics"));
@@ -418,35 +453,82 @@ mod tests {
 
     #[test]
     fn test_channel_summary_prompt_with_purpose() {
-        let prompt = channel_summary_prompt("sales", Some("Sales team discussions"), "[]");
+        let prompt = channel_summary_prompt("sales", Some("Sales team discussions"), "[]", None);
         assert!(prompt.contains("#sales"));
         assert!(prompt.contains("Channel purpose: Sales team discussions"));
     }
 
     #[test]
     fn test_channel_summary_prompt_without_purpose() {
-        let prompt = channel_summary_prompt("random", None, "[]");
+        let prompt = channel_summary_prompt("random", None, "[]", None);
         assert!(prompt.contains("#random"));
         assert!(!prompt.contains("Channel purpose:"));
     }
 
     #[test]
     fn test_cross_channel_grouping_prompt_contains_date() {
-        let prompt = cross_channel_grouping_prompt("2024-01-20", "[]", None);
+        let prompt = cross_channel_grouping_prompt("2024-01-20", "[]", None, None);
         assert!(prompt.contains("2024-01-20"));
         assert!(prompt.contains("CHANNEL SUMMARIES"));
     }
 
     #[test]
     fn test_cross_channel_grouping_prompt_with_ungrouped() {
-        let prompt = cross_channel_grouping_prompt("2024-01-20", "[]", Some("[{\"id\":\"1\"}]"));
+        let prompt = cross_channel_grouping_prompt("2024-01-20", "[]", Some("[{\"id\":\"1\"}]"), None);
         assert!(prompt.contains("MESSAGES FROM LOW-VOLUME CHANNELS"));
         assert!(prompt.contains("[{\"id\":\"1\"}]"));
     }
 
     #[test]
     fn test_cross_channel_grouping_prompt_without_ungrouped() {
-        let prompt = cross_channel_grouping_prompt("2024-01-20", "[]", None);
+        let prompt = cross_channel_grouping_prompt("2024-01-20", "[]", None, None);
         assert!(!prompt.contains("MESSAGES FROM LOW-VOLUME CHANNELS"));
+    }
+
+    #[test]
+    fn test_format_user_guidance_with_guidance() {
+        let prompt = batch_analysis_prompt_with_existing("2024-01-15", "[]", None, Some("Focus on production issues"));
+        assert!(prompt.contains("USER PREFERENCES"));
+        assert!(prompt.contains("Focus on production issues"));
+    }
+
+    #[test]
+    fn test_format_user_guidance_empty() {
+        let prompt = batch_analysis_prompt_with_existing("2024-01-15", "[]", None, Some(""));
+        assert!(!prompt.contains("USER PREFERENCES"));
+    }
+
+    #[test]
+    fn test_format_user_guidance_none() {
+        let prompt = batch_analysis_prompt_with_existing("2024-01-15", "[]", None, None);
+        assert!(!prompt.contains("USER PREFERENCES"));
+    }
+
+    #[test]
+    fn test_daily_digest_with_guidance() {
+        let prompt = daily_digest_prompt("2024-01-15", "[]", Some("Highlight customer feedback"));
+        assert!(prompt.contains("USER PREFERENCES"));
+        assert!(prompt.contains("Highlight customer feedback"));
+    }
+
+    #[test]
+    fn test_weekly_digest_with_guidance() {
+        let prompt = weekly_digest_prompt("2024-01-08", "[]", Some("Focus on engineering updates"));
+        assert!(prompt.contains("USER PREFERENCES"));
+        assert!(prompt.contains("Focus on engineering updates"));
+    }
+
+    #[test]
+    fn test_channel_summary_with_guidance() {
+        let prompt = channel_summary_prompt("general", None, "[]", Some("Priority on incidents"));
+        assert!(prompt.contains("USER PREFERENCES"));
+        assert!(prompt.contains("Priority on incidents"));
+    }
+
+    #[test]
+    fn test_cross_channel_with_guidance() {
+        let prompt = cross_channel_grouping_prompt("2024-01-20", "[]", None, Some("Focus on sales topics"));
+        assert!(prompt.contains("USER PREFERENCES"));
+        assert!(prompt.contains("Focus on sales topics"));
     }
 }

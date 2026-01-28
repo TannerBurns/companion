@@ -48,6 +48,8 @@ export interface Preferences {
   enabledSources: string[]
   enabledCategories: string[]
   notificationsEnabled: boolean
+  /** User-provided guidance for AI summarization (e.g., "focus on production issues") */
+  userGuidance?: string
 }
 
 export interface SlackChannel {

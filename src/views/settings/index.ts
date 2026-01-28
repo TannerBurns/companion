@@ -5,6 +5,7 @@
  */
 
 export { SourcesSection } from './SourcesSection'
+export { GuidanceSection } from './GuidanceSection'
 export { NotificationsSection } from './NotificationsSection'
 export { SyncSection } from './SyncSection'
 export { AppearanceSection } from './AppearanceSection'
