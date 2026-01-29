@@ -60,6 +60,11 @@ describe('useAppStore', () => {
       expect(useAppStore.getState().settingsSection).toBe('api-keys')
     })
 
+    it('updates settingsSection to guidance', () => {
+      useAppStore.getState().setSettingsSection('guidance')
+      expect(useAppStore.getState().settingsSection).toBe('guidance')
+    })
+
     it('updates settingsSection to notifications', () => {
       useAppStore.getState().setSettingsSection('notifications')
       expect(useAppStore.getState().settingsSection).toBe('notifications')

@@ -76,14 +76,16 @@ mod tests {
             enabled_sources: vec!["slack".to_string()],
             enabled_categories: vec!["engineering".to_string(), "product".to_string()],
             notifications_enabled: false,
+            user_guidance: Some("Focus on production issues".to_string()),
         };
-        
+
         let json = serde_json::to_string(&prefs).unwrap();
         let restored: Preferences = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(restored.sync_interval_minutes, 30);
         assert!(!restored.notifications_enabled);
         assert_eq!(restored.enabled_sources, vec!["slack"]);
+        assert_eq!(restored.user_guidance, Some("Focus on production issues".to_string()));
     }
 
     #[test]

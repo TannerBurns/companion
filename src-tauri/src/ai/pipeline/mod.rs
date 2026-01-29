@@ -46,6 +46,24 @@ impl ProcessingPipeline {
         Self { gemini, db, crypto }
     }
     
+    /// Load user guidance from preferences.
+    async fn load_user_guidance(&self) -> Option<String> {
+        let result: Option<(String,)> = sqlx::query_as(
+            "SELECT value FROM preferences WHERE key = 'user_preferences'"
+        )
+        .fetch_optional(self.db.pool())
+        .await
+        .ok()?;
+
+        result.and_then(|(json,)| {
+            let prefs: serde_json::Value = serde_json::from_str(&json).ok()?;
+            prefs.get("userGuidance")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.trim().is_empty())
+                .map(String::from)
+        })
+    }
+
     /// Load Slack user ID to display name mapping.
     async fn load_user_map(&self) -> Result<HashMap<String, String>, String> {
         let users: Vec<SlackUserRow> = sqlx::query_as(
@@ -115,6 +133,10 @@ impl ProcessingPipeline {
 
         tracing::info!("Processing {} items in batch for {}", items.len(), date_str);
         let user_map = self.load_user_map().await.unwrap_or_default();
+        let user_guidance = self.load_user_guidance().await;
+        if user_guidance.is_some() {
+            tracing::info!("User guidance loaded, will apply to AI prompts");
+        }
 
         // Load existing topics for this day
         let existing_topic_rows: Vec<ExistingTopicRow> = sqlx::query_as(
@@ -146,7 +168,7 @@ impl ProcessingPipeline {
                 "Using hierarchical summarization for {} messages",
                 messages_for_prompt.len()
             );
-            
+
             let mut messages_by_channel: HashMap<String, Vec<MessageForPrompt>> = HashMap::new();
             for msg in messages_for_prompt {
                 messages_by_channel
@@ -154,10 +176,10 @@ impl ProcessingPipeline {
                     .or_default()
                     .push(msg);
             }
-            
-            hierarchical::process_hierarchical(&self.gemini, &date_str, messages_by_channel).await?
+
+            hierarchical::process_hierarchical(&self.gemini, &date_str, messages_by_channel, user_guidance.as_deref()).await?
         } else {
-            self.process_batch_direct(&date_str, messages_for_prompt, &existing_topics).await?
+            self.process_batch_direct(&date_str, messages_for_prompt, &existing_topics, user_guidance.as_deref()).await?
         };
 
         // Store results
@@ -225,24 +247,26 @@ impl ProcessingPipeline {
         date_str: &str,
         messages_for_prompt: Vec<MessageForPrompt>,
         existing_topics: &[ExistingTopic],
+        user_guidance: Option<&str>,
     ) -> Result<GroupedAnalysisResult, String> {
         let messages_json = serde_json::to_string_pretty(&messages_for_prompt)
             .map_err(|e| e.to_string())?;
-        
+
         let prompt = if existing_topics.is_empty() {
-            prompts::batch_analysis_prompt(date_str, &messages_json)
+            prompts::batch_analysis_prompt_with_existing(date_str, &messages_json, None, user_guidance)
         } else {
             let existing_topics_json = serde_json::to_string_pretty(existing_topics)
                 .map_err(|e| e.to_string())?;
-            prompts::batch_analysis_prompt_with_existing(date_str, &messages_json, Some(&existing_topics_json))
+            prompts::batch_analysis_prompt_with_existing(date_str, &messages_json, Some(&existing_topics_json), user_guidance)
         };
 
         tracing::info!(
-            "Sending batch of {} messages to AI for analysis (with {} existing topics)", 
-            messages_for_prompt.len(), 
-            existing_topics.len()
+            "Sending batch of {} messages to AI for analysis (with {} existing topics, guidance: {})",
+            messages_for_prompt.len(),
+            existing_topics.len(),
+            user_guidance.is_some()
         );
-        
+
         self.gemini
             .generate_json(&prompt)
             .await
@@ -288,6 +312,7 @@ impl ProcessingPipeline {
 
         tracing::info!("Processing {} items in batch for {}", items.len(), date_str);
         let user_map = self.load_user_map().await.unwrap_or_default();
+        let user_guidance = self.load_user_guidance().await;
 
         let existing_topic_rows: Vec<ExistingTopicRow> = sqlx::query_as(
             "SELECT id, summary, category, importance_score, entities
@@ -316,7 +341,7 @@ impl ProcessingPipeline {
                 "Using hierarchical summarization for {} messages",
                 messages_for_prompt.len()
             );
-            
+
             let mut messages_by_channel: HashMap<String, Vec<MessageForPrompt>> = HashMap::new();
             for msg in messages_for_prompt {
                 messages_by_channel
@@ -324,10 +349,10 @@ impl ProcessingPipeline {
                     .or_default()
                     .push(msg);
             }
-            
-            hierarchical::process_hierarchical(&self.gemini, date_str, messages_by_channel).await?
+
+            hierarchical::process_hierarchical(&self.gemini, date_str, messages_by_channel, user_guidance.as_deref()).await?
         } else {
-            self.process_batch_direct(date_str, messages_for_prompt, &existing_topics).await?
+            self.process_batch_direct(date_str, messages_for_prompt, &existing_topics, user_guidance.as_deref()).await?
         };
 
         let stored_count = storage::store_results(self.db.pool(), &result, date_str, &mut existing_message_ids_map).await?;
@@ -372,9 +397,10 @@ impl ProcessingPipeline {
             return Ok("No items to summarize".to_string());
         }
 
+        let user_guidance = self.load_user_guidance().await;
         let items_json = serde_json::to_string_pretty(&items).unwrap();
-        let prompt = prompts::daily_digest_prompt(date, &items_json);
-        
+        let prompt = prompts::daily_digest_prompt(date, &items_json, user_guidance.as_deref());
+
         let digest: prompts::DigestSummary = self.gemini
             .generate_json(&prompt)
             .await

@@ -2,6 +2,7 @@ import { clsx } from 'clsx'
 import {
   ChevronLeft,
   Link2,
+  MessageSquare,
   Bell,
   Clock,
   Palette,
@@ -14,6 +15,7 @@ import type { SettingsSection } from '../store'
 import { GeminiSettings, GoogleIcon } from './GeminiSettings'
 import {
   SourcesSection,
+  GuidanceSection,
   NotificationsSection,
   SyncSection,
   AppearanceSection,
@@ -53,6 +55,7 @@ const SETTINGS_SECTIONS: Array<{
 }> = [
   { id: 'sources', icon: Link2, label: 'Sources' },
   { id: 'api-keys', icon: GoogleIcon, label: 'Gemini' },
+  { id: 'guidance', icon: MessageSquare, label: 'AI Guidance' },
   { id: 'notifications', icon: Bell, label: 'Notifications' },
   { id: 'sync', icon: Clock, label: 'Sync' },
   { id: 'appearance', icon: Palette, label: 'Appearance' },
@@ -70,6 +73,8 @@ export function SettingsView() {
         return <SourcesSection />
       case 'api-keys':
         return <GeminiSettings />
+      case 'guidance':
+        return <GuidanceSection />
       case 'notifications':
         return <NotificationsSection />
       case 'sync':

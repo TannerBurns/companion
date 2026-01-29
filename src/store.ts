@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 
 export type View = 'daily-digest' | 'weekly-summary' | 'settings'
-export type SettingsSection = 'sources' | 'api-keys' | 'notifications' | 'sync' | 'appearance' | 'data' | 'status' | 'about'
+export type SettingsSection = 'sources' | 'api-keys' | 'guidance' | 'notifications' | 'sync' | 'appearance' | 'data' | 'status' | 'about'
 
 export interface SlackState {
   connected: boolean

@@ -77,6 +77,9 @@ pub struct Preferences {
     pub enabled_sources: Vec<String>,
     pub enabled_categories: Vec<String>,
     pub notifications_enabled: bool,
+    /// User-provided guidance for AI summarization (e.g., "focus on production issues")
+    #[serde(default)]
+    pub user_guidance: Option<String>,
 }
 
 impl Default for Preferences {
@@ -92,6 +95,7 @@ impl Default for Preferences {
                 "research".to_string(),
             ],
             notifications_enabled: true,
+            user_guidance: None,
         }
     }
 }
@@ -222,6 +226,7 @@ mod tests {
         assert_eq!(prefs.sync_interval_minutes, 15);
         assert!(prefs.notifications_enabled);
         assert!(prefs.enabled_categories.contains(&"engineering".to_string()));
+        assert!(prefs.user_guidance.is_none());
     }
 
     #[test]
@@ -231,11 +236,13 @@ mod tests {
             enabled_sources: vec!["slack".to_string()],
             enabled_categories: vec!["sales".to_string()],
             notifications_enabled: false,
+            user_guidance: Some("Focus on production issues".to_string()),
         };
-        
+
         let json = serde_json::to_string(&prefs).unwrap();
         assert!(json.contains("\"syncIntervalMinutes\":30"));
         assert!(json.contains("\"notificationsEnabled\":false"));
+        assert!(json.contains("\"userGuidance\":\"Focus on production issues\""));
     }
 
     #[test]
