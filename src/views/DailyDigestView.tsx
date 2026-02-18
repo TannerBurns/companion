@@ -1,6 +1,7 @@
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { format, subDays, addDays, isToday, isFuture } from 'date-fns'
 import { ChevronLeft, ChevronRight, Calendar, PanelLeftClose, PanelLeft, X, RefreshCw } from 'lucide-react'
+import { listen } from '@tauri-apps/api/event'
 import { useDailyDigest } from '../hooks/useDigest'
 import { ContentCard, ContentDetailModal, ExportMenu } from '../components'
 import { Button } from '../components/ui/Button'
@@ -39,21 +40,50 @@ export function DailyDigestView() {
 
   const isPastDate = !isToday(date) && !isFuture(date)
 
+  // Track queued activity IDs so we can update them when sync completes
+  const queuedActivityRef = useRef<{ id: string; dateLabel: string } | null>(null)
+
+  // Listen for sync:completed events to refresh view when queued syncs finish
+  useEffect(() => {
+    const unlisten = listen('sync:completed', () => {
+      if (queuedActivityRef.current) {
+        const { id, dateLabel } = queuedActivityRef.current
+        queuedActivityRef.current = null
+        updateLocalActivity(id, {
+          status: 'completed',
+          message: `Resynced ${dateLabel} (queued sync completed)`,
+        })
+        refetch()
+      }
+    })
+
+    return () => {
+      unlisten.then((fn) => fn())
+    }
+  }, [updateLocalActivity, refetch])
+
   const handleResyncDay = useCallback(async () => {
     if (isResyncing) return
     setIsResyncing(true)
-    
+
     const dateLabel = format(date, 'MMMM d, yyyy')
     const activityId = addLocalActivity({
       type: 'historical_resync',
       message: `Resyncing ${dateLabel}...`,
       status: 'running',
     })
-    
+
     try {
       const result = await api.resyncHistoricalDay(dateStr, timezoneOffset)
-      
-      if (result.errors.length > 0) {
+
+      if (result.queued) {
+        // Sync was queued — will run when current sync finishes
+        updateLocalActivity(activityId, {
+          status: 'queued',
+          message: `Queued resync for ${dateLabel} (waiting for current sync)`,
+        })
+        queuedActivityRef.current = { id: activityId, dateLabel }
+      } else if (result.errors.length > 0) {
         if (result.itemsSynced > 0) {
           updateLocalActivity(activityId, {
             status: 'completed',
@@ -71,8 +101,10 @@ export function DailyDigestView() {
           message: `Resynced ${dateLabel} (${result.itemsSynced} items)`,
         })
       }
-      
-      await refetch()
+
+      if (!result.queued) {
+        await refetch()
+      }
     } catch (error) {
       console.error('Failed to resync day:', error)
       updateLocalActivity(activityId, {

@@ -28,6 +28,10 @@ vi.mock('../lib/api', () => ({
   },
 }))
 
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: vi.fn(() => Promise.resolve(() => {})),
+}))
+
 vi.mock('../components', () => ({
   ContentCard: () => null,
   ContentDetailModal: () => null,
@@ -94,5 +98,28 @@ describe('DailyDigestView resync handling', () => {
         })
       )
     )
+  })
+
+  it('marks activity completed when resync succeeds with no errors', async () => {
+    mockResyncHistoricalDay.mockResolvedValue({
+      itemsSynced: 10,
+      channelsProcessed: 2,
+      errors: [],
+    })
+
+    render(<DailyDigestView />)
+    fireEvent.click(screen.getByLabelText('Previous day'))
+    fireEvent.click(await screen.findByRole('button', { name: 'Resync This Day' }))
+
+    await waitFor(() =>
+      expect(mockUpdateLocalActivity).toHaveBeenCalledWith(
+        'activity-1',
+        expect.objectContaining({
+          status: 'completed',
+          message: expect.stringMatching(/Resynced.*10 items/),
+        })
+      )
+    )
+    expect(mockRefetch).toHaveBeenCalled()
   })
 })

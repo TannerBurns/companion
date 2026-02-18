@@ -81,6 +81,9 @@ pub struct SyncResult {
     pub items_synced: i32,
     pub channels_processed: i32,
     pub errors: Vec<String>,
+    /// True when the sync was queued to run after the current sync completes
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub queued: bool,
 }
 
 /// User preferences
@@ -291,6 +294,7 @@ mod tests {
             items_synced: 10,
             channels_processed: 3,
             errors: vec!["error1".to_string()],
+            queued: false,
         };
 
         let json = serde_json::to_string(&result).unwrap();

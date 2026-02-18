@@ -4,6 +4,7 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{Mutex, Notify};
 
+use super::queue::SyncQueue;
 use super::slack::{SlackClient, SlackSyncService, SlackTokens};
 use crate::crypto::CryptoService;
 use crate::db::Database;
@@ -15,6 +16,7 @@ pub struct BackgroundSyncService {
     crypto: Arc<CryptoService>,
     pipeline: Arc<tokio::sync::Mutex<PipelineManager>>,
     sync_lock: Arc<tokio::sync::Mutex<()>>,
+    sync_queue: Arc<SyncQueue>,
     interval_minutes: Arc<Mutex<u64>>,
     is_running: Arc<AtomicBool>,
     is_syncing: Arc<AtomicBool>,
@@ -29,6 +31,7 @@ impl BackgroundSyncService {
         crypto: Arc<CryptoService>,
         pipeline: Arc<tokio::sync::Mutex<PipelineManager>>,
         sync_lock: Arc<tokio::sync::Mutex<()>>,
+        sync_queue: Arc<SyncQueue>,
         interval_minutes: u64,
     ) -> Self {
         Self {
@@ -37,6 +40,7 @@ impl BackgroundSyncService {
             crypto,
             pipeline,
             sync_lock,
+            sync_queue,
             interval_minutes: Arc::new(Mutex::new(interval_minutes)),
             is_running: Arc::new(AtomicBool::new(false)),
             is_syncing: Arc::new(AtomicBool::new(false)),
@@ -101,6 +105,7 @@ impl BackgroundSyncService {
                 self.crypto.clone(),
                 self.pipeline.clone(),
                 self.sync_lock.clone(),
+                self.sync_queue.clone(),
                 self.is_syncing.clone(),
             )
             .await;
@@ -117,6 +122,7 @@ impl BackgroundSyncService {
         let crypto = self.crypto.clone();
         let pipeline = self.pipeline.clone();
         let sync_lock = self.sync_lock.clone();
+        let sync_queue = self.sync_queue.clone();
         let interval_minutes = self.interval_minutes.clone();
         let is_running = self.is_running.clone();
         let is_syncing = self.is_syncing.clone();
@@ -140,7 +146,7 @@ impl BackgroundSyncService {
                             break;
                         }
                         next_sync_at.store(0, Ordering::SeqCst);
-                        Self::run_sync_cycle(&app_handle, db.clone(), crypto.clone(), pipeline.clone(), sync_lock.clone(), is_syncing.clone()).await;
+                        Self::run_sync_cycle(&app_handle, db.clone(), crypto.clone(), pipeline.clone(), sync_lock.clone(), sync_queue.clone(), is_syncing.clone()).await;
                     }
                     _ = interval_changed.notified() => {
                         tracing::info!("Sync interval changed, resetting timer");
@@ -165,6 +171,7 @@ impl BackgroundSyncService {
         crypto: Arc<CryptoService>,
         pipeline: Arc<tokio::sync::Mutex<PipelineManager>>,
         sync_lock: Arc<tokio::sync::Mutex<()>>,
+        sync_queue: Arc<SyncQueue>,
         is_syncing: Arc<AtomicBool>,
     ) {
         use crate::ai::ProcessingPipeline;
@@ -279,6 +286,177 @@ impl BackgroundSyncService {
             total_items,
             duration_ms
         );
+
+        // Drop the sync guard before draining the queue
+        drop(_guard);
+
+        // Drain any queued historical syncs
+        Self::drain_queue(
+            db,
+            crypto,
+            pipeline,
+            sync_lock,
+            sync_queue,
+            is_syncing,
+        )
+        .await;
+    }
+
+    /// Drain the sync queue, executing each queued historical resync in order.
+    async fn drain_queue(
+        db: Arc<Database>,
+        crypto: Arc<CryptoService>,
+        pipeline: Arc<tokio::sync::Mutex<PipelineManager>>,
+        sync_lock: Arc<tokio::sync::Mutex<()>>,
+        sync_queue: Arc<SyncQueue>,
+        is_syncing: Arc<AtomicBool>,
+    ) {
+        use crate::ai::ProcessingPipeline;
+        use crate::pipeline::PipelineTaskType;
+
+        loop {
+            let request = sync_queue.dequeue().await;
+
+            let Some(request) = request else {
+                break;
+            };
+
+            let (Some(date), Some(tz_offset)) =
+                (request.date.clone(), request.timezone_offset)
+            else {
+                tracing::warn!(
+                    "Queued sync request missing date/timezone, skipping: {:?}",
+                    request.source
+                );
+                continue;
+            };
+
+            tracing::info!("Background: draining queued historical resync for {}", date);
+
+            let _sync_guard = match sync_lock.try_lock() {
+                Ok(guard) => guard,
+                Err(_) => {
+                    tracing::info!(
+                        "Sync lock busy during background queue drain, re-queuing {}",
+                        date
+                    );
+                    sync_queue.enqueue(request).await;
+                    break;
+                }
+            };
+
+            is_syncing.store(true, Ordering::SeqCst);
+
+            let mut total_items = 0;
+
+            let sync_task_id = {
+                let pipeline = pipeline.lock().await;
+                pipeline
+                    .start_task(
+                        PipelineTaskType::SyncSlack,
+                        format!("Syncing Slack messages for {}...", date),
+                    )
+                    .await
+            };
+
+            match sync_slack_historical_day(db.clone(), crypto.clone(), &date, tz_offset).await {
+                Ok(result) => {
+                    let items = result.items_synced;
+                    tracing::info!(
+                        "Background queued historical sync completed: {} items for {}",
+                        items,
+                        date
+                    );
+                    total_items = items;
+
+                    let pipeline = pipeline.lock().await;
+                    let message = if items > 0 {
+                        format!("Synced {} messages for {}", items, date)
+                    } else {
+                        format!("No new messages found for {}", date)
+                    };
+                    pipeline.complete_task(&sync_task_id, Some(message)).await;
+                }
+                Err(e) => {
+                    tracing::error!(
+                        "Background queued historical sync error for {}: {}",
+                        date,
+                        e
+                    );
+                    let pipeline = pipeline.lock().await;
+                    if e.contains("not connected") {
+                        pipeline
+                            .complete_task(
+                                &sync_task_id,
+                                Some("Slack not connected".to_string()),
+                            )
+                            .await;
+                    } else {
+                        pipeline.fail_task(&sync_task_id, e).await;
+                    }
+                }
+            }
+
+            if total_items > 0 {
+                if let Some(api_key_or_client) =
+                    get_gemini_client(db.clone(), crypto.clone()).await
+                {
+                    let ai_task_id = {
+                        let pipeline = pipeline.lock().await;
+                        pipeline
+                            .start_task(
+                                PipelineTaskType::AiSummarize,
+                                format!("Analyzing content for {}...", date),
+                            )
+                            .await
+                    };
+
+                    let ai_pipeline = ProcessingPipeline::new(
+                        api_key_or_client,
+                        db.clone(),
+                        crypto.clone(),
+                    );
+                    match ai_pipeline.process_batch_for_date(&date, tz_offset).await {
+                        Ok(processed) => {
+                            tracing::info!(
+                                "AI batch processed {} groups/items for {} (background queued)",
+                                processed,
+                                date
+                            );
+                            let pipeline = pipeline.lock().await;
+                            pipeline
+                                .complete_task(
+                                    &ai_task_id,
+                                    Some(format!(
+                                        "Grouped and summarized {} items",
+                                        processed
+                                    )),
+                                )
+                                .await;
+                        }
+                        Err(e) => {
+                            tracing::error!(
+                                "AI batch processing error for {} (background queued): {}",
+                                date,
+                                e
+                            );
+                            let pipeline = pipeline.lock().await;
+                            pipeline.fail_task(&ai_task_id, e).await;
+                        }
+                    }
+                }
+            }
+
+            is_syncing.store(false, Ordering::SeqCst);
+            tracing::info!(
+                "Background queued historical resync for {} completed",
+                date
+            );
+
+            // Drop guard and yield to allow user-initiated syncs to interleave
+            drop(_sync_guard);
+            tokio::task::yield_now().await;
+        }
     }
 }
 

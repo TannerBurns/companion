@@ -48,7 +48,7 @@ fn main() {
                 pipeline.set_app_handle(app_handle.clone());
                 let pipeline_arc = Arc::new(Mutex::new(pipeline));
 
-                let sync_queue = SyncQueue::new();
+                let sync_queue = Arc::new(SyncQueue::new());
                 let sync_lock = Arc::new(tokio::sync::Mutex::new(()));
 
                 let sync_interval = load_sync_interval(db_arc.clone()).await;
@@ -60,6 +60,7 @@ fn main() {
                     crypto_arc.clone(),
                     pipeline_arc.clone(),
                     sync_lock.clone(),
+                    sync_queue.clone(),
                     sync_interval,
                 );
                 let background_sync_arc = Arc::new(background_sync);

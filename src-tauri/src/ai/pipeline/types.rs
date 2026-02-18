@@ -63,6 +63,39 @@ mod tests {
     }
 
     #[test]
+    fn test_historical_ai_chunk_size() {
+        assert_eq!(HISTORICAL_AI_CHUNK_SIZE, 150);
+    }
+
+    #[test]
+    fn test_hierarchical_channel_chunk_size() {
+        assert_eq!(HIERARCHICAL_CHANNEL_CHUNK_SIZE, 80);
+    }
+
+    #[test]
+    fn test_message_for_prompt_clone() {
+        let original = MessageForPrompt {
+            id: "msg1".to_string(),
+            channel: "#general".to_string(),
+            author: "Alice".to_string(),
+            timestamp: "10:30".to_string(),
+            text: "Hello world".to_string(),
+            url: Some("https://slack.com/msg1".to_string()),
+            thread_id: Some("thread-123".to_string()),
+        };
+
+        let cloned = original.clone();
+
+        assert_eq!(cloned.id, "msg1");
+        assert_eq!(cloned.channel, "#general");
+        assert_eq!(cloned.author, "Alice");
+        assert_eq!(cloned.timestamp, "10:30");
+        assert_eq!(cloned.text, "Hello world");
+        assert_eq!(cloned.url, Some("https://slack.com/msg1".to_string()));
+        assert_eq!(cloned.thread_id, Some("thread-123".to_string()));
+    }
+
+    #[test]
     fn test_existing_topic_row_fields() {
         let row = ExistingTopicRow {
             id: "test_id".to_string(),

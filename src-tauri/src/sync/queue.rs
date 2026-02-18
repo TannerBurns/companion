@@ -8,6 +8,10 @@ pub struct SyncRequest {
     pub source: String,
     pub created_at: i64,
     pub retry_count: u32,
+    /// For historical resyncs: the date string (e.g. "2026-02-17")
+    pub date: Option<String>,
+    /// For historical resyncs: the timezone offset in minutes
+    pub timezone_offset: Option<i32>,
 }
 
 impl SyncRequest {
@@ -17,6 +21,21 @@ impl SyncRequest {
             source,
             created_at: chrono::Utc::now().timestamp(),
             retry_count: 0,
+            date: None,
+            timezone_offset: None,
+        }
+    }
+
+    /// Create a request for a historical day resync.
+    /// Uses `source = "historical:YYYY-MM-DD"` for deduplication.
+    pub fn historical(date: String, timezone_offset: i32) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            source: format!("historical:{}", date),
+            created_at: chrono::Utc::now().timestamp(),
+            retry_count: 0,
+            date: Some(date),
+            timezone_offset: Some(timezone_offset),
         }
     }
 }

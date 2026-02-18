@@ -156,7 +156,6 @@ pub struct ChannelHistoryResponse {
     pub next_cursor: Option<String>,
 }
 
-/// Response from the Slack conversations.replies API with pagination info
 #[derive(Debug, Clone)]
 pub struct ThreadRepliesResponse {
     pub messages: Vec<SlackMessage>,
@@ -444,5 +443,89 @@ mod tests {
         let cloned = response.clone();
         assert_eq!(cloned.messages.len(), 1);
         assert_eq!(cloned.messages[0].ts, "123");
+    }
+
+    #[test]
+    fn test_thread_replies_response_with_messages() {
+        let response = ThreadRepliesResponse {
+            messages: vec![
+                SlackMessage {
+                    ts: "1234567890.000000".into(),
+                    user: Some("U123".into()),
+                    text: "Thread parent".into(),
+                    thread_ts: Some("1234567890.000000".into()),
+                    reply_count: Some(3),
+                },
+                SlackMessage {
+                    ts: "1234567890.000001".into(),
+                    user: Some("U456".into()),
+                    text: "Reply 1".into(),
+                    thread_ts: Some("1234567890.000000".into()),
+                    reply_count: None,
+                },
+            ],
+            has_more: true,
+            next_cursor: Some("cursor_abc".into()),
+        };
+
+        assert_eq!(response.messages.len(), 2);
+        assert!(response.has_more);
+        assert_eq!(response.next_cursor, Some("cursor_abc".into()));
+    }
+
+    #[test]
+    fn test_thread_replies_response_empty() {
+        let response = ThreadRepliesResponse {
+            messages: vec![],
+            has_more: false,
+            next_cursor: None,
+        };
+
+        assert!(response.messages.is_empty());
+        assert!(!response.has_more);
+        assert!(response.next_cursor.is_none());
+    }
+
+    #[test]
+    fn test_thread_replies_response_clone() {
+        let response = ThreadRepliesResponse {
+            messages: vec![SlackMessage {
+                ts: "123.456".into(),
+                user: Some("U789".into()),
+                text: "Cloned reply".into(),
+                thread_ts: Some("123.000".into()),
+                reply_count: None,
+            }],
+            has_more: true,
+            next_cursor: Some("next".into()),
+        };
+
+        let cloned = response.clone();
+        assert_eq!(cloned.messages.len(), 1);
+        assert_eq!(cloned.messages[0].ts, "123.456");
+        assert_eq!(cloned.messages[0].text, "Cloned reply");
+        assert!(cloned.has_more);
+        assert_eq!(cloned.next_cursor, Some("next".into()));
+    }
+
+    #[test]
+    fn test_thread_replies_response_last_page() {
+        let response = ThreadRepliesResponse {
+            messages: vec![
+                SlackMessage {
+                    ts: "100.000".into(),
+                    user: Some("U1".into()),
+                    text: "Final page message".into(),
+                    thread_ts: Some("100.000".into()),
+                    reply_count: None,
+                },
+            ],
+            has_more: false,
+            next_cursor: None,
+        };
+
+        assert_eq!(response.messages.len(), 1);
+        assert!(!response.has_more);
+        assert!(response.next_cursor.is_none());
     }
 }

@@ -24,7 +24,7 @@ pub struct AppState {
     pub notifications: Option<NotificationService>,
     pub analytics: Option<AnalyticsService>,
     pub pipeline: Arc<tokio::sync::Mutex<PipelineManager>>,
-    pub sync_queue: SyncQueue,
+    pub sync_queue: Arc<SyncQueue>,
     /// Prevents concurrent sync operations from racing on topic updates.
     pub sync_lock: Arc<tokio::sync::Mutex<()>>,
     pub background_sync: Option<Arc<BackgroundSyncService>>,

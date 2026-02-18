@@ -86,6 +86,7 @@ mod tests {
             items_synced: 0,
             channels_processed: 0,
             errors: vec![],
+            queued: false,
         };
 
         assert_eq!(result.items_synced, 0);

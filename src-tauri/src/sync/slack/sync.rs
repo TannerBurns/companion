@@ -485,7 +485,6 @@ impl SlackSyncService {
         let thread_ts = parent_message.thread_ts.as_deref().unwrap_or(&parent_message.ts);
         let mut items_synced = 0;
         let mut cursor: Option<String> = None;
-        let mut is_first_page = true;
 
         loop {
             let response = self
@@ -505,13 +504,9 @@ impl SlackSyncService {
                 if reply.ts == parent_message.ts {
                     continue;
                 }
-                if is_first_page && reply.ts == thread_ts {
-                    continue;
-                }
                 self.store_message(slack_channel, reply).await?;
                 items_synced += 1;
             }
-            is_first_page = false;
 
             if !response.has_more {
                 break;

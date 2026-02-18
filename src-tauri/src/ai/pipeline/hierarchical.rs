@@ -237,13 +237,16 @@ mod tests {
             .map(|chunk| chunk.len())
             .collect();
 
-        assert_eq!(chunk_sizes, vec![HIERARCHICAL_CHANNEL_CHUNK_SIZE, HIERARCHICAL_CHANNEL_CHUNK_SIZE, 7]);
+        assert_eq!(
+            chunk_sizes,
+            vec![HIERARCHICAL_CHANNEL_CHUNK_SIZE, HIERARCHICAL_CHANNEL_CHUNK_SIZE, 7]
+        );
     }
 
     #[test]
     fn test_channel_chunk_count_uses_ceil_division() {
-        let count = (HIERARCHICAL_CHANNEL_CHUNK_SIZE * 2 + 1)
-            .div_ceil(HIERARCHICAL_CHANNEL_CHUNK_SIZE);
+        let count =
+            (HIERARCHICAL_CHANNEL_CHUNK_SIZE * 2 + 1).div_ceil(HIERARCHICAL_CHANNEL_CHUNK_SIZE);
         assert_eq!(count, 3);
     }
 }
