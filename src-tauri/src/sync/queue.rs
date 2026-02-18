@@ -71,7 +71,7 @@ impl SyncQueue {
 
     pub async fn requeue_failed(&self, mut request: SyncRequest) -> bool {
         request.retry_count += 1;
-        
+
         if request.retry_count <= self.max_retries {
             let mut queue = self.queue.lock().await;
             queue.push_back(request);

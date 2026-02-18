@@ -21,6 +21,18 @@ export function useWeeklyDigest(weekStart?: string, timezoneOffset?: number) {
   })
 }
 
+interface WeeklyBreakdownParams {
+  weekStart?: string
+  timezoneOffset?: number
+}
+
+export function useGenerateWeeklyBreakdown() {
+  return useMutation({
+    mutationFn: async (params: WeeklyBreakdownParams) =>
+      api.generateWeeklyBreakdown(params.weekStart, params.timezoneOffset),
+  })
+}
+
 interface SyncParams {
   sources?: string[]
   timezoneOffset?: number

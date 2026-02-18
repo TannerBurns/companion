@@ -133,11 +133,13 @@ impl PipelineManager {
     }
 
     pub async fn complete_task(&self, task_id: &str, message: Option<String>) {
-        self.finish_task(task_id, TaskStatus::Completed, message, None).await;
+        self.finish_task(task_id, TaskStatus::Completed, message, None)
+            .await;
     }
 
     pub async fn fail_task(&self, task_id: &str, error: String) {
-        self.finish_task(task_id, TaskStatus::Failed, None, Some(error)).await;
+        self.finish_task(task_id, TaskStatus::Failed, None, Some(error))
+            .await;
     }
 
     async fn finish_task(
@@ -243,7 +245,9 @@ mod tests {
             .start_task(PipelineTaskType::SyncJira, "Syncing issues".to_string())
             .await;
 
-        manager.fail_task(&task_id, "Connection failed".to_string()).await;
+        manager
+            .fail_task(&task_id, "Connection failed".to_string())
+            .await;
 
         let state = manager.get_state().await;
         assert_eq!(state.active_tasks.len(), 0);
@@ -266,7 +270,10 @@ mod tests {
     async fn test_status_message_single_task() {
         let manager = PipelineManager::new();
         manager
-            .start_task(PipelineTaskType::AiSummarize, "Processing items".to_string())
+            .start_task(
+                PipelineTaskType::AiSummarize,
+                "Processing items".to_string(),
+            )
             .await;
 
         let msg = manager.get_status_message().await;
@@ -291,11 +298,26 @@ mod tests {
     fn test_task_type_display_names() {
         assert_eq!(PipelineTaskType::SyncSlack.display_name(), "Syncing Slack");
         assert_eq!(PipelineTaskType::SyncJira.display_name(), "Syncing Jira");
-        assert_eq!(PipelineTaskType::SyncConfluence.display_name(), "Syncing Confluence");
-        assert_eq!(PipelineTaskType::AiSummarize.display_name(), "Summarizing content");
-        assert_eq!(PipelineTaskType::AiCategorize.display_name(), "Categorizing items");
-        assert_eq!(PipelineTaskType::GenerateDailyDigest.display_name(), "Generating daily digest");
-        assert_eq!(PipelineTaskType::GenerateWeeklyDigest.display_name(), "Generating weekly digest");
+        assert_eq!(
+            PipelineTaskType::SyncConfluence.display_name(),
+            "Syncing Confluence"
+        );
+        assert_eq!(
+            PipelineTaskType::AiSummarize.display_name(),
+            "Summarizing content"
+        );
+        assert_eq!(
+            PipelineTaskType::AiCategorize.display_name(),
+            "Categorizing items"
+        );
+        assert_eq!(
+            PipelineTaskType::GenerateDailyDigest.display_name(),
+            "Generating daily digest"
+        );
+        assert_eq!(
+            PipelineTaskType::GenerateWeeklyDigest.display_name(),
+            "Generating weekly digest"
+        );
     }
 
     #[test]

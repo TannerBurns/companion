@@ -22,13 +22,13 @@ impl TrayCache {
             tooltip: String::new(),
         }
     }
-    
+
     fn needs_update(&self, state: &PipelineState, tooltip: &str) -> bool {
-        self.is_busy != state.is_busy 
+        self.is_busy != state.is_busy
             || self.task_count != state.active_tasks.len()
             || self.tooltip != tooltip
     }
-    
+
     fn update(&mut self, state: &PipelineState, tooltip: &str) {
         self.is_busy = state.is_busy;
         self.task_count = state.active_tasks.len();
@@ -62,14 +62,24 @@ fn build_tray_menu(
 ) -> Result<Menu<tauri::Wry>, Box<dyn std::error::Error>> {
     let show_window = MenuItem::with_id(app, "show", "Show Companion", true, None::<&str>)?;
     let open_settings = MenuItem::with_id(app, "settings", "Open Settings", true, None::<&str>)?;
-    
+
     let is_syncing = pipeline_state.map(|s| s.is_busy).unwrap_or(false);
-    let sync_label = if is_syncing { "⟳ Syncing..." } else { "Sync Now" };
+    let sync_label = if is_syncing {
+        "⟳ Syncing..."
+    } else {
+        "Sync Now"
+    };
     let sync_now = MenuItem::with_id(app, "sync", sync_label, !is_syncing, None::<&str>)?;
-    let check_updates = MenuItem::with_id(app, "check_updates", "Check for Updates", true, None::<&str>)?;
+    let check_updates = MenuItem::with_id(
+        app,
+        "check_updates",
+        "Check for Updates",
+        true,
+        None::<&str>,
+    )?;
     let separator1 = PredefinedMenuItem::separator(app)?;
     let activity_submenu = build_activity_submenu(app, pipeline_state)?;
-    
+
     let separator2 = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
@@ -95,7 +105,7 @@ fn build_activity_submenu(
     pipeline_state: Option<&PipelineState>,
 ) -> Result<Submenu<tauri::Wry>, Box<dyn std::error::Error>> {
     use tauri::menu::IsMenuItem;
-    
+
     let tasks: Vec<_> = pipeline_state
         .map(|s| s.recent_history.iter().take(5).collect())
         .unwrap_or_default();
@@ -120,7 +130,13 @@ fn build_activity_submenu(
                     TaskStatus::Pending => "○",
                 };
                 let label = format!("{} {}", status_icon, task.task_type.display_name());
-                MenuItem::with_id(app, format!("activity_{}", idx), &label, false, None::<&str>)
+                MenuItem::with_id(
+                    app,
+                    format!("activity_{}", idx),
+                    &label,
+                    false,
+                    None::<&str>,
+                )
             })
             .collect::<Result<Vec<_>, _>>()?
     };
@@ -164,19 +180,23 @@ pub fn spawn_tray_updater(app_handle: AppHandle, pipeline: Arc<Mutex<PipelineMan
     tauri::async_runtime::spawn(async move {
         let mut cache = TrayCache::new();
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(2));
-        
+
         loop {
             interval.tick().await;
-            
+
             let pipeline = pipeline.lock().await;
             let message = pipeline.get_status_message().await;
             let state = pipeline.get_state().await;
             drop(pipeline);
-            
+
             if let Some(tray) = app_handle.tray_by_id("main") {
                 if cache.needs_update(&state, &message) {
-                    tracing::debug!("Tray update: is_busy={}, tasks={}, message={}", 
-                        state.is_busy, state.active_tasks.len(), message);
+                    tracing::debug!(
+                        "Tray update: is_busy={}, tasks={}, message={}",
+                        state.is_busy,
+                        state.active_tasks.len(),
+                        message
+                    );
                     cache.update(&state, &message);
                     let _ = tray.set_tooltip(Some(&message));
                     if let Ok(menu) = build_tray_menu(&app_handle, Some(&state)) {
@@ -194,7 +214,7 @@ mod tests {
 
     fn make_state(is_busy: bool, active_task_count: usize) -> PipelineState {
         use crate::pipeline::{PipelineTask, PipelineTaskType, TaskStatus};
-        
+
         let active: Vec<PipelineTask> = (0..active_task_count)
             .map(|i| PipelineTask {
                 id: format!("task-{}", i),
@@ -207,7 +227,7 @@ mod tests {
                 error: None,
             })
             .collect();
-        
+
         PipelineState {
             active_tasks: active,
             recent_history: vec![],
@@ -249,7 +269,7 @@ mod tests {
         let mut cache = TrayCache::new();
         let state = make_state(false, 0);
         cache.update(&state, "Companion");
-        
+
         let same_state = make_state(false, 0);
         assert!(!cache.needs_update(&same_state, "Companion"));
     }
@@ -259,7 +279,7 @@ mod tests {
         let mut cache = TrayCache::new();
         let state = make_state(true, 5);
         cache.update(&state, "Syncing...");
-        
+
         assert!(cache.is_busy);
         assert_eq!(cache.task_count, 5);
         assert_eq!(cache.tooltip, "Syncing...");
@@ -270,7 +290,7 @@ mod tests {
         let mut cache = TrayCache::new();
         let busy_state = make_state(true, 2);
         cache.update(&busy_state, "⟳ Syncing...");
-        
+
         let idle_state = make_state(false, 3);
         assert!(cache.needs_update(&idle_state, "Companion"));
     }
@@ -280,7 +300,7 @@ mod tests {
         let mut cache = TrayCache::new();
         let state = make_state(false, 2);
         cache.update(&state, "Companion");
-        
+
         let new_state = make_state(false, 4);
         assert!(cache.needs_update(&new_state, "Companion"));
     }

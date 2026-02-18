@@ -1,16 +1,16 @@
-use sha2::{Sha256, Digest};
-use crate::ai::prompts::ExistingTopic;
 use super::types::ExistingTopicRow;
+use crate::ai::prompts::ExistingTopic;
+use sha2::{Digest, Sha256};
 
 /// Generate a deterministic topic ID based on topic name and date.
-/// 
+///
 /// The ID is case-insensitive to ensure related topics are grouped together
 /// even with minor case variations.
-/// 
+///
 /// # Arguments
 /// * `topic` - The topic name/title
 /// * `date` - The date string in YYYY-MM-DD format
-/// 
+///
 /// # Returns
 /// A string in the format `topic_<hex>` where hex is derived from SHA256 hash
 pub fn generate_topic_id(topic: &str, date: &str) -> String {
@@ -18,46 +18,59 @@ pub fn generate_topic_id(topic: &str, date: &str) -> String {
     hasher.update(topic.to_lowercase().as_bytes());
     hasher.update(date.as_bytes());
     let result = hasher.finalize();
-    format!("topic_{:x}", &result[..8].iter().fold(0u64, |acc, &b| (acc << 8) | b as u64))
+    format!(
+        "topic_{:x}",
+        &result[..8]
+            .iter()
+            .fold(0u64, |acc, &b| (acc << 8) | b as u64)
+    )
 }
 
 /// Convert database rows to ExistingTopic structs for AI prompts.
-/// 
+///
 /// Returns a tuple of:
 /// - Map of topic IDs to their message IDs (for merge tracking)
 /// - List of ExistingTopic structs (only for rows with valid topic fields)
 pub fn convert_existing_topics(
     rows: &[ExistingTopicRow],
-) -> (std::collections::HashMap<String, Vec<String>>, Vec<ExistingTopic>) {
-    let mut message_ids_map: std::collections::HashMap<String, Vec<String>> = 
+) -> (
+    std::collections::HashMap<String, Vec<String>>,
+    Vec<ExistingTopic>,
+) {
+    let mut message_ids_map: std::collections::HashMap<String, Vec<String>> =
         std::collections::HashMap::new();
     let mut existing_topics: Vec<ExistingTopic> = Vec::new();
-    
+
     for row in rows {
-        let entities: serde_json::Value = row.entities.as_ref()
+        let entities: serde_json::Value = row
+            .entities
+            .as_ref()
             .and_then(|e| serde_json::from_str(e).ok())
             .unwrap_or(serde_json::json!({}));
-        
+
         // Only process rows that have a valid topic field
         let Some(topic) = entities.get("topic").and_then(|v| v.as_str()) else {
             continue;
         };
-        
-        let message_ids: Vec<String> = entities.get("message_ids")
+
+        let message_ids: Vec<String> = entities
+            .get("message_ids")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default();
         let message_count: i32 = message_ids.len().try_into().unwrap_or(i32::MAX);
-        
+
         // Cache message IDs for merge tracking
         message_ids_map.insert(row.id.clone(), message_ids);
-        
-        let channels: Vec<String> = entities.get("channels")
+
+        let channels: Vec<String> = entities
+            .get("channels")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default();
-        let people: Vec<String> = entities.get("people")
+        let people: Vec<String> = entities
+            .get("people")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default();
-        
+
         existing_topics.push(ExistingTopic {
             topic_id: row.id.clone(),
             topic: topic.to_string(),
@@ -69,7 +82,7 @@ pub fn convert_existing_topics(
             people,
         });
     }
-    
+
     (message_ids_map, existing_topics)
 }
 
@@ -151,9 +164,9 @@ mod tests {
     fn test_merge_message_ids_basic() {
         let existing = vec!["msg1".into(), "msg2".into(), "msg3".into()];
         let new = vec!["msg3".into(), "msg4".into(), "msg5".into()];
-        
+
         let merged = merge_message_ids(&existing, &new);
-        
+
         assert_eq!(merged.len(), 5);
         assert_eq!(merged, vec!["msg1", "msg2", "msg3", "msg4", "msg5"]);
     }
@@ -162,9 +175,9 @@ mod tests {
     fn test_merge_message_ids_preserves_order() {
         let existing = vec!["a".into(), "b".into(), "c".into()];
         let new = vec!["d".into(), "e".into()];
-        
+
         let merged = merge_message_ids(&existing, &new);
-        
+
         assert_eq!(merged, vec!["a", "b", "c", "d", "e"]);
     }
 
@@ -172,9 +185,9 @@ mod tests {
     fn test_merge_message_ids_empty_existing() {
         let existing: Vec<String> = vec![];
         let new = vec!["msg1".into(), "msg2".into()];
-        
+
         let merged = merge_message_ids(&existing, &new);
-        
+
         assert_eq!(merged.len(), 2);
         assert_eq!(merged, vec!["msg1", "msg2"]);
     }
@@ -183,9 +196,9 @@ mod tests {
     fn test_merge_message_ids_empty_new() {
         let existing = vec!["msg1".into(), "msg2".into()];
         let new: Vec<String> = vec![];
-        
+
         let merged = merge_message_ids(&existing, &new);
-        
+
         assert_eq!(merged.len(), 2);
         assert_eq!(merged, vec!["msg1", "msg2"]);
     }
@@ -194,9 +207,9 @@ mod tests {
     fn test_merge_message_ids_all_duplicates() {
         let existing = vec!["msg1".into(), "msg2".into()];
         let new = vec!["msg1".into(), "msg2".into()];
-        
+
         let merged = merge_message_ids(&existing, &new);
-        
+
         assert_eq!(merged, vec!["msg1", "msg2"]);
     }
 
@@ -211,16 +224,16 @@ mod tests {
                 entities: Some(r##"{"topic": "Valid Topic", "channels": ["#dev"], "people": ["Alice"], "message_ids": ["msg1", "msg2"]}"##.to_string()),
             },
         ];
-        
+
         let (message_ids_map, existing_topics) = convert_existing_topics(&rows);
-        
+
         assert_eq!(existing_topics.len(), 1);
         assert_eq!(existing_topics[0].topic_id, "topic_valid");
         assert_eq!(existing_topics[0].topic, "Valid Topic");
         assert_eq!(existing_topics[0].channels, vec!["#dev"]);
         assert_eq!(existing_topics[0].people, vec!["Alice"]);
         assert_eq!(existing_topics[0].message_count, 2);
-        
+
         assert_eq!(message_ids_map.len(), 1);
         assert_eq!(
             message_ids_map.get("topic_valid"),
@@ -246,13 +259,13 @@ mod tests {
                 entities: Some(r##"{"channels": [], "people": [], "message_ids": ["msg2", "msg3"]}"##.to_string()),
             },
         ];
-        
+
         let (message_ids_map, existing_topics) = convert_existing_topics(&rows);
-        
+
         // Only valid topic should be in existing_topics
         assert_eq!(existing_topics.len(), 1);
         assert_eq!(existing_topics[0].topic_id, "topic_valid");
-        
+
         // But message_ids_map should only contain rows that made it to existing_topics
         // (rows with valid topic field)
         assert_eq!(message_ids_map.len(), 1);
@@ -260,36 +273,32 @@ mod tests {
 
     #[test]
     fn test_convert_existing_topics_handles_invalid_json() {
-        let rows = vec![
-            ExistingTopicRow {
-                id: "topic_bad".to_string(),
-                summary: "Bad JSON".to_string(),
-                category: None,
-                importance_score: None,
-                entities: Some("not valid json".to_string()),
-            },
-        ];
-        
+        let rows = vec![ExistingTopicRow {
+            id: "topic_bad".to_string(),
+            summary: "Bad JSON".to_string(),
+            category: None,
+            importance_score: None,
+            entities: Some("not valid json".to_string()),
+        }];
+
         let (message_ids_map, existing_topics) = convert_existing_topics(&rows);
-        
+
         assert!(existing_topics.is_empty());
         assert!(message_ids_map.is_empty());
     }
 
     #[test]
     fn test_convert_existing_topics_handles_none_entities() {
-        let rows = vec![
-            ExistingTopicRow {
-                id: "topic_none".to_string(),
-                summary: "No entities".to_string(),
-                category: None,
-                importance_score: None,
-                entities: None,
-            },
-        ];
-        
+        let rows = vec![ExistingTopicRow {
+            id: "topic_none".to_string(),
+            summary: "No entities".to_string(),
+            category: None,
+            importance_score: None,
+            entities: None,
+        }];
+
         let (message_ids_map, existing_topics) = convert_existing_topics(&rows);
-        
+
         assert!(existing_topics.is_empty());
         assert!(message_ids_map.is_empty());
     }
@@ -308,14 +317,14 @@ mod tests {
                 entities: Some(r##"{"topic": "Missing Message IDs", "channels": ["#general"], "people": ["Bob"]}"##.to_string()),
             },
         ];
-        
+
         let (message_ids_map, existing_topics) = convert_existing_topics(&rows);
-        
+
         // Topic should still be processed
         assert_eq!(existing_topics.len(), 1);
         assert_eq!(existing_topics[0].topic, "Missing Message IDs");
         assert_eq!(existing_topics[0].message_count, 0);
-        
+
         // message_ids_map contains an empty vector for this topic
         // storage::store_results should fall back to DB fetch when it encounters this
         assert_eq!(message_ids_map.len(), 1);
@@ -334,12 +343,12 @@ mod tests {
                 entities: Some(r##"{"topic": "Wrong Type", "channels": [], "people": [], "message_ids": "not_an_array"}"##.to_string()),
             },
         ];
-        
+
         let (message_ids_map, existing_topics) = convert_existing_topics(&rows);
-        
+
         assert_eq!(existing_topics.len(), 1);
         assert_eq!(existing_topics[0].message_count, 0);
-        
+
         // Empty vector because parsing failed
         assert_eq!(message_ids_map.get("topic_bad_type"), Some(&vec![]));
     }

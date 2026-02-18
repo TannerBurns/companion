@@ -67,9 +67,11 @@ mod tests {
             summary: "Test summary".to_string(),
             category: Some("engineering".to_string()),
             importance_score: Some(0.8),
-            entities: Some(r#"{"topic": "Test", "channels": [], "people": [], "message_ids": []}"#.to_string()),
+            entities: Some(
+                r#"{"topic": "Test", "channels": [], "people": [], "message_ids": []}"#.to_string(),
+            ),
         };
-        
+
         assert_eq!(row.id, "test_id");
         assert_eq!(row.summary, "Test summary");
         assert_eq!(row.category, Some("engineering".to_string()));
@@ -88,7 +90,7 @@ mod tests {
             url: Some("https://slack.com/msg1".to_string()),
             thread_id: None,
         };
-        
+
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains("\"id\":\"msg1\""));
         assert!(json.contains("\"channel\":\"#general\""));
@@ -108,7 +110,7 @@ mod tests {
             url: None,
             thread_id: Some("1234567890.123456".to_string()),
         };
-        
+
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains("\"thread_id\":\"1234567890.123456\""));
         // url is None so should not be serialized
@@ -122,13 +124,14 @@ mod tests {
             real_name: Some("Alice Smith".to_string()),
             display_name: Some("alice".to_string()),
         };
-        
+
         // Should prefer display_name over real_name
-        let name = user.display_name
+        let name = user
+            .display_name
             .filter(|s| !s.is_empty())
             .or(user.real_name)
             .unwrap_or_else(|| user.user_id.clone());
-        
+
         assert_eq!(name, "alice");
     }
 
@@ -139,12 +142,13 @@ mod tests {
             real_name: Some("Alice Smith".to_string()),
             display_name: Some("".to_string()),
         };
-        
-        let name = user.display_name
+
+        let name = user
+            .display_name
             .filter(|s| !s.is_empty())
             .or(user.real_name)
             .unwrap_or_else(|| user.user_id.clone());
-        
+
         assert_eq!(name, "Alice Smith");
     }
 
@@ -155,12 +159,13 @@ mod tests {
             real_name: None,
             display_name: None,
         };
-        
-        let name = user.display_name
+
+        let name = user
+            .display_name
             .filter(|s| !s.is_empty())
             .or(user.real_name)
             .unwrap_or_else(|| user.user_id.clone());
-        
+
         assert_eq!(name, "U123");
     }
 }

@@ -1,15 +1,15 @@
 // Prevents additional console window on Windows in release
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use companion::db::Database;
-use companion::crypto::CryptoService;
-use companion::notifications::NotificationService;
 use companion::analytics::AnalyticsService;
+use companion::commands;
+use companion::crypto::CryptoService;
+use companion::db::Database;
+use companion::notifications::NotificationService;
 use companion::pipeline::PipelineManager;
-use companion::sync::{SyncQueue, BackgroundSyncService};
+use companion::sync::{BackgroundSyncService, SyncQueue};
 use companion::tray;
 use companion::AppState;
-use companion::commands;
 use std::sync::Arc;
 use tauri::Manager;
 use tokio::sync::Mutex;
@@ -20,7 +20,7 @@ fn main() {
         .with(tracing_subscriber::fmt::layer())
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("companion=info"))
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("companion=info")),
         )
         .init();
 
@@ -97,6 +97,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::get_daily_digest,
             commands::get_weekly_digest,
+            commands::generate_weekly_breakdown,
             commands::start_sync,
             commands::get_sync_status,
             commands::resync_historical_day,
@@ -129,13 +130,12 @@ fn main() {
 }
 
 async fn load_sync_interval(db: Arc<Database>) -> u64 {
-    let result: Option<(String,)> = sqlx::query_as(
-        "SELECT value FROM preferences WHERE key = 'user_preferences'"
-    )
-    .fetch_optional(db.pool())
-    .await
-    .ok()
-    .flatten();
+    let result: Option<(String,)> =
+        sqlx::query_as("SELECT value FROM preferences WHERE key = 'user_preferences'")
+            .fetch_optional(db.pool())
+            .await
+            .ok()
+            .flatten();
 
     if let Some((json,)) = result {
         if let Ok(prefs) = serde_json::from_str::<serde_json::Value>(&json) {

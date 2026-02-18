@@ -7,19 +7,19 @@ use thiserror::Error;
 pub enum SlackError {
     #[error("HTTP error: {0}")]
     Http(#[from] reqwest::Error),
-    
+
     #[error("OAuth error: {0}")]
     OAuth(String),
-    
+
     #[error("API error: {0}")]
     Api(String),
-    
+
     #[error("Database error: {0}")]
     Database(#[from] sqlx::Error),
-    
+
     #[error("Crypto error: {0}")]
     Crypto(String),
-    
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -178,11 +178,11 @@ mod tests {
             team_domain: Some("test-team".into()),
             user_id: "U123".into(),
         };
-        
+
         let json = serde_json::to_string(&tokens).unwrap();
         assert!(json.contains("xoxp-123"));
         assert!(json.contains("Test Team"));
-        
+
         let parsed: SlackTokens = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.access_token, "xoxp-123");
         assert_eq!(parsed.team_name, "Test Team");
@@ -201,7 +201,7 @@ mod tests {
             purpose: Some("General discussion".into()),
             topic: None,
         };
-        
+
         let json = serde_json::to_string(&channel).unwrap();
         let parsed: SlackChannel = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.id, "C123");
@@ -223,7 +223,7 @@ mod tests {
             purpose: None,
             topic: None,
         };
-        
+
         let json = serde_json::to_string(&channel).unwrap();
         let parsed: SlackChannel = serde_json::from_str(&json).unwrap();
         assert!(parsed.is_im);
@@ -239,7 +239,7 @@ mod tests {
             thread_ts: Some("1234567890.000000".into()),
             reply_count: Some(5),
         };
-        
+
         let json = serde_json::to_string(&msg).unwrap();
         let parsed: SlackMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.ts, "1234567890.123456");
@@ -256,7 +256,7 @@ mod tests {
             thread_ts: None,
             reply_count: None,
         };
-        
+
         let json = serde_json::to_string(&msg).unwrap();
         let parsed: SlackMessage = serde_json::from_str(&json).unwrap();
         assert!(parsed.user.is_none());
@@ -270,7 +270,7 @@ mod tests {
             items_synced: 42,
             errors: vec!["Error 1".into()],
         };
-        
+
         let json = serde_json::to_string(&result).unwrap();
         assert!(json.contains("\"source\":\"slack\""));
         assert!(json.contains("\"items_synced\":42"));
@@ -280,7 +280,7 @@ mod tests {
     fn test_slack_error_display() {
         let err = SlackError::OAuth("Invalid token".into());
         assert_eq!(err.to_string(), "OAuth error: Invalid token");
-        
+
         let err = SlackError::Api("rate_limited".into());
         assert_eq!(err.to_string(), "API error: rate_limited");
     }
@@ -298,11 +298,11 @@ mod tests {
             purpose: Some("General chat".into()),
             enabled: true,
         };
-        
+
         let json = serde_json::to_string(&selection).unwrap();
         assert!(json.contains("channelId")); // camelCase
         assert!(json.contains("C123"));
-        
+
         let parsed: SlackChannelSelection = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.channel_id, "C123");
         assert_eq!(parsed.team_id, "T123");
@@ -318,11 +318,11 @@ mod tests {
             user_id: Some("U456".into()),
             selected_channel_count: 5,
         };
-        
+
         let json = serde_json::to_string(&status).unwrap();
         assert!(json.contains("teamId")); // camelCase
         assert!(json.contains("selectedChannelCount"));
-        
+
         let parsed: SlackConnectionStatus = serde_json::from_str(&json).unwrap();
         assert!(parsed.connected);
         assert_eq!(parsed.team_id, Some("T123".into()));
@@ -338,7 +338,7 @@ mod tests {
             user_id: None,
             selected_channel_count: 0,
         };
-        
+
         let json = serde_json::to_string(&status).unwrap();
         let parsed: SlackConnectionStatus = serde_json::from_str(&json).unwrap();
         assert!(!parsed.connected);
@@ -353,10 +353,10 @@ mod tests {
             real_name: Some("John Doe".into()),
             display_name: Some("John".into()),
         };
-        
+
         let json = serde_json::to_string(&user).unwrap();
         assert!(json.contains("realName")); // camelCase
-        
+
         let parsed: SlackUser = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.id, "U123");
         assert_eq!(parsed.name, "johndoe");
@@ -371,7 +371,7 @@ mod tests {
             real_name: None,
             display_name: None,
         };
-        
+
         let json = serde_json::to_string(&user).unwrap();
         let parsed: SlackUser = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.id, "U123");

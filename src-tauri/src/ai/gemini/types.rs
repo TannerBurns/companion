@@ -152,7 +152,9 @@ mod tests {
     fn test_content_serialization() {
         let content = Content {
             role: "user".into(),
-            parts: vec![Part::Text { text: "Hello".into() }],
+            parts: vec![Part::Text {
+                text: "Hello".into(),
+            }],
         };
 
         let json = serde_json::to_string(&content).unwrap();
@@ -217,7 +219,7 @@ mod tests {
         let response: GenerateResponse = serde_json::from_str(json).unwrap();
         assert_eq!(response.candidates.len(), 1);
         assert_eq!(response.candidates[0].finish_reason, Some("STOP".into()));
-        
+
         let usage = response.usage_metadata.unwrap();
         assert_eq!(usage.prompt_token_count, 10);
         assert_eq!(usage.total_token_count, 15);
@@ -225,7 +227,9 @@ mod tests {
 
     #[test]
     fn test_part_text_serialization() {
-        let part = Part::Text { text: "Hello".into() };
+        let part = Part::Text {
+            text: "Hello".into(),
+        };
         let json = serde_json::to_string(&part).unwrap();
         assert_eq!(json, r#"{"text":"Hello"}"#);
     }

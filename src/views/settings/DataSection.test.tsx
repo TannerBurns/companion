@@ -4,14 +4,16 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DataSection } from './DataSection'
 
 // Mock the API
+const mockGetDataStats = vi.fn().mockResolvedValue({
+  contentItems: 150,
+  aiSummaries: 45,
+  slackUsers: 12,
+  syncStates: 3,
+})
+
 vi.mock('../../lib/api', () => ({
   api: {
-    getDataStats: vi.fn().mockResolvedValue({
-      contentItems: 150,
-      aiSummaries: 45,
-      slackUsers: 12,
-      syncStates: 3,
-    }),
+    getDataStats: () => mockGetDataStats(),
     clearSyncedData: vi.fn().mockResolvedValue({ itemsDeleted: 195 }),
     factoryReset: vi.fn().mockResolvedValue(undefined),
   },
@@ -38,18 +40,31 @@ function renderWithQueryClient(ui: React.ReactElement) {
   )
 }
 
+async function renderDataSection() {
+  renderWithQueryClient(<DataSection />)
+  await waitFor(() => {
+    expect(mockGetDataStats).toHaveBeenCalled()
+  })
+}
+
 describe('DataSection', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockGetDataStats.mockResolvedValue({
+      contentItems: 150,
+      aiSummaries: 45,
+      slackUsers: 12,
+      syncStates: 3,
+    })
   })
 
-  it('renders the section title', () => {
-    renderWithQueryClient(<DataSection />)
+  it('renders the section title', async () => {
+    await renderDataSection()
     expect(screen.getByText('Data Management')).toBeInTheDocument()
   })
 
   it('displays data statistics', async () => {
-    renderWithQueryClient(<DataSection />)
+    await renderDataSection()
     await waitFor(() => {
       expect(screen.getByText('150')).toBeInTheDocument()
       expect(screen.getByText('45')).toBeInTheDocument()
@@ -58,23 +73,23 @@ describe('DataSection', () => {
     })
   })
 
-  it('shows storage heading', () => {
-    renderWithQueryClient(<DataSection />)
+  it('shows storage heading', async () => {
+    await renderDataSection()
     expect(screen.getByText('Storage')).toBeInTheDocument()
   })
 
-  it('shows clear synced data heading', () => {
-    renderWithQueryClient(<DataSection />)
+  it('shows clear synced data heading', async () => {
+    await renderDataSection()
     expect(screen.getByText('Clear Synced Data')).toBeInTheDocument()
   })
 
-  it('shows factory reset heading', () => {
-    renderWithQueryClient(<DataSection />)
+  it('shows factory reset heading', async () => {
+    await renderDataSection()
     expect(screen.getByText('Factory Reset')).toBeInTheDocument()
   })
 
   it('shows confirmation dialog when reset button is clicked', async () => {
-    renderWithQueryClient(<DataSection />)
+    await renderDataSection()
     // Find the reset button by looking for button with Reset text within the factory reset section
     const resetButtons = screen.getAllByRole('button')
     const resetButton = resetButtons.find(btn => btn.textContent?.includes('Reset') && !btn.textContent?.includes('Everything'))
@@ -86,7 +101,7 @@ describe('DataSection', () => {
   })
 
   it('shows cancel button in reset dialog', async () => {
-    renderWithQueryClient(<DataSection />)
+    await renderDataSection()
     const resetButtons = screen.getAllByRole('button')
     const resetButton = resetButtons.find(btn => btn.textContent?.includes('Reset') && !btn.textContent?.includes('Everything'))
     fireEvent.click(resetButton!)

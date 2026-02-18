@@ -35,6 +35,19 @@ pub struct TopItem {
     pub reason: String,
 }
 
+/// Result of generating a weekly breakdown for status updates.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WeeklyBreakdown {
+    #[serde(default)]
+    pub major: Vec<String>,
+    #[serde(default)]
+    pub focus: Vec<String>,
+    #[serde(default)]
+    pub obstacles: Vec<String>,
+    #[serde(default)]
+    pub informational: Vec<String>,
+}
+
 /// Result of batch analysis with grouped content.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GroupedAnalysisResult {
@@ -116,7 +129,7 @@ mod tests {
 
         let json = serde_json::to_string(&result).unwrap();
         let parsed: SummaryResult = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(parsed.summary, "Test summary");
         assert_eq!(parsed.category, "engineering");
         assert_eq!(parsed.category_confidence, 0.95);
@@ -129,15 +142,16 @@ mod tests {
         let digest = DigestSummary {
             summary: "Daily summary".into(),
             key_themes: vec!["theme1".into(), "theme2".into()],
-            top_items: vec![
-                TopItem { title: "Item 1".into(), reason: "Important".into() },
-            ],
+            top_items: vec![TopItem {
+                title: "Item 1".into(),
+                reason: "Important".into(),
+            }],
             action_items: vec!["Action 1".into()],
         };
 
         let json = serde_json::to_string(&digest).unwrap();
         let parsed: DigestSummary = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(parsed.summary, "Daily summary");
         assert_eq!(parsed.key_themes.len(), 2);
         assert_eq!(parsed.top_items[0].title, "Item 1");
@@ -171,7 +185,7 @@ mod tests {
 
         let json = serde_json::to_string(&result).unwrap();
         let parsed: GroupedAnalysisResult = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(parsed.groups.len(), 1);
         assert_eq!(parsed.groups[0].topic, "Product Launch");
         assert_eq!(parsed.groups[0].channels.len(), 2);
@@ -235,7 +249,7 @@ mod tests {
             "message_ids": ["msg1"],
             "people": ["Alice"]
         }"##;
-        
+
         let parsed: ContentGroup = serde_json::from_str(json).unwrap();
         assert_eq!(parsed.topic, "Test Topic");
         assert_eq!(parsed.topic_id, None);
@@ -254,7 +268,7 @@ mod tests {
             "people": ["Alice"],
             "topic_id": null
         }"##;
-        
+
         let parsed: ContentGroup = serde_json::from_str(json).unwrap();
         assert_eq!(parsed.topic_id, None);
     }
@@ -294,7 +308,7 @@ mod tests {
             "message_count": 0,
             "people": []
         }"#;
-        
+
         let parsed: ExistingTopic = serde_json::from_str(json).unwrap();
         assert_eq!(parsed.topic_id, "t1");
         assert_eq!(parsed.message_count, 0);
@@ -337,7 +351,7 @@ mod tests {
 
         let json = serde_json::to_string(&group).unwrap();
         let parsed: ContentGroup = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(parsed.topic_id, Some("topic_roundtrip_123".into()));
     }
 }

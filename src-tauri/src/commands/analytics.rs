@@ -1,5 +1,5 @@
-use crate::AppState;
 use super::types::AnalyticsSummary;
+use crate::AppState;
 use std::sync::Arc;
 use tauri::State;
 use tokio::sync::Mutex;
@@ -12,17 +12,15 @@ pub async fn track_event(
     event_data: serde_json::Value,
 ) -> Result<(), String> {
     let state = state.lock().await;
-    
+
     let now = chrono::Utc::now().timestamp();
-    sqlx::query(
-        "INSERT INTO analytics (event_type, event_data, created_at) VALUES (?, ?, ?)"
-    )
-    .bind(&event_type)
-    .bind(serde_json::to_string(&event_data).unwrap_or_default())
-    .bind(now)
-    .execute(state.db.pool())
-    .await
-    .map_err(|e| e.to_string())?;
+    sqlx::query("INSERT INTO analytics (event_type, event_data, created_at) VALUES (?, ?, ?)")
+        .bind(&event_type)
+        .bind(serde_json::to_string(&event_data).unwrap_or_default())
+        .bind(now)
+        .execute(state.db.pool())
+        .await
+        .map_err(|e| e.to_string())?;
 
     tracing::debug!("Tracked event: {}", event_type);
     Ok(())
@@ -38,7 +36,7 @@ pub async fn get_analytics_summary(
     let since = chrono::Utc::now().timestamp() - (days as i64 * 86400);
 
     let counts: Vec<(String, i64)> = sqlx::query_as(
-        "SELECT event_type, COUNT(*) FROM analytics WHERE created_at >= ? GROUP BY event_type"
+        "SELECT event_type, COUNT(*) FROM analytics WHERE created_at >= ? GROUP BY event_type",
     )
     .bind(since)
     .fetch_all(state.db.pool())
@@ -58,12 +56,12 @@ mod tests {
         let mut event_counts = std::collections::HashMap::new();
         event_counts.insert("page_view".to_string(), 100);
         event_counts.insert("sync_triggered".to_string(), 25);
-        
+
         let summary = AnalyticsSummary {
             event_counts,
             days: 7,
         };
-        
+
         assert_eq!(summary.days, 7);
         assert_eq!(summary.event_counts.get("page_view"), Some(&100));
     }
@@ -73,7 +71,7 @@ mod tests {
         let days = 7i32;
         let now = chrono::Utc::now().timestamp();
         let since = now - (days as i64 * 86400);
-        
+
         // Should be exactly 7 days ago in seconds
         assert_eq!(now - since, 7 * 86400);
     }
@@ -84,7 +82,7 @@ mod tests {
             "source": "slack",
             "items": 10
         });
-        
+
         let serialized = serde_json::to_string(&event_data).unwrap();
         assert!(serialized.contains("slack"));
         assert!(serialized.contains("10"));
@@ -101,7 +99,7 @@ mod tests {
     fn test_days_to_seconds_conversion() {
         let days = 30i32;
         let seconds = days as i64 * 86400;
-        
+
         // 30 days = 2,592,000 seconds
         assert_eq!(seconds, 2_592_000);
     }
@@ -112,7 +110,7 @@ mod tests {
             event_counts: std::collections::HashMap::new(),
             days: 1,
         };
-        
+
         assert!(summary.event_counts.is_empty());
         assert_eq!(summary.days, 1);
     }

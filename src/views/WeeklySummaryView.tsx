@@ -8,13 +8,11 @@ import {
   eachDayOfInterval,
   isSameDay,
 } from 'date-fns'
-import { ChevronLeft, ChevronRight, Calendar, PanelLeftClose, PanelLeft, X } from 'lucide-react'
-import { useWeeklyDigest } from '../hooks/useDigest'
+import { ChevronLeft, ChevronRight, Calendar, PanelLeftClose, PanelLeft, X, RefreshCw } from 'lucide-react'
+import { useWeeklyDigest, useGenerateWeeklyBreakdown } from '../hooks/useDigest'
 import { ContentCard, ContentDetailModal, ExportMenu } from '../components'
 import { Button } from '../components/ui/Button'
 import { useAppStore } from '../store'
-import { exportDigestPDF, type PDFDayGroup } from '../lib/pdf'
-import { exportDigestMarkdown, type DayGroup as MarkdownDayGroup } from '../lib/markdown'
 import {
   filterDigestItems,
   countByImportance,
@@ -28,7 +26,7 @@ import {
   type ImportanceFilter,
   type SourceFilter,
 } from '../lib/digestFilters'
-import type { DigestItem } from '../lib/api'
+import type { DigestItem, WeeklyBreakdownResponse } from '../lib/api'
 
 interface DayGroup {
   date: Date
@@ -44,12 +42,16 @@ export function WeeklySummaryView() {
   const [selectedItem, setSelectedItem] = useState<DigestItem | null>(null)
   const [isExporting, setIsExporting] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [breakdown, setBreakdown] = useState<WeeklyBreakdownResponse | null>(null)
+  const [showBreakdownModal, setShowBreakdownModal] = useState(false)
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle')
 
   const weekStartStr = format(weekStart, 'yyyy-MM-dd')
   const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 })
   // Send timezone offset in minutes (e.g., PST is -480, EST is -300)
   const timezoneOffset = weekStart.getTimezoneOffset()
   const { data, isLoading, error } = useWeeklyDigest(weekStartStr, timezoneOffset)
+  const generateBreakdown = useGenerateWeeklyBreakdown()
 
   const filteredItems = useMemo(
     () => filterDigestItems(data?.items ?? [], filter, importanceFilter, sourceFilter),
@@ -102,7 +104,8 @@ export function WeeklySummaryView() {
     })
     
     try {
-      const pdfDayGroups: PDFDayGroup[] = dayGroups.map(group => ({
+      const { exportDigestPDF } = await import('../lib/pdf')
+      const pdfDayGroups = dayGroups.map(group => ({
         date: group.date,
         dateLabel: format(group.date, 'EEEE, MMMM d'),
         items: group.items,
@@ -141,7 +144,8 @@ export function WeeklySummaryView() {
     })
     
     try {
-      const markdownDayGroups: MarkdownDayGroup[] = dayGroups.map(group => ({
+      const { exportDigestMarkdown } = await import('../lib/markdown')
+      const markdownDayGroups = dayGroups.map(group => ({
         date: group.date,
         dateLabel: format(group.date, 'EEEE, MMMM d'),
         items: group.items,
@@ -169,6 +173,47 @@ export function WeeklySummaryView() {
   }, [data, filteredItems, weekStart, weekEnd, dayGroups, addLocalActivity, updateLocalActivity])
 
   const activeFilterCount = countActiveFilters(filter, importanceFilter, sourceFilter)
+
+  const handleGenerateBreakdown = useCallback(async () => {
+    if (isLoading || !data || data.items.length === 0) return
+    setCopyStatus('idle')
+    try {
+      const result = await generateBreakdown.mutateAsync({
+        weekStart: weekStartStr,
+        timezoneOffset,
+      })
+      setBreakdown(result)
+      setShowBreakdownModal(true)
+    } catch (err) {
+      console.error('Failed to generate weekly breakdown:', err)
+    }
+  }, [data, isLoading, weekStartStr, timezoneOffset, generateBreakdown])
+
+  const handleCopyBreakdown = useCallback(async () => {
+    if (!breakdown) return
+    try {
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        await navigator.clipboard.writeText(breakdown.breakdownText)
+      } else {
+        const textarea = document.createElement('textarea')
+        textarea.value = breakdown.breakdownText
+        textarea.style.position = 'fixed'
+        textarea.style.opacity = '0'
+        document.body.appendChild(textarea)
+        textarea.focus()
+        textarea.select()
+        const copied = document.execCommand('copy')
+        document.body.removeChild(textarea)
+        if (!copied) {
+          throw new Error('Clipboard copy failed')
+        }
+      }
+      setCopyStatus('copied')
+    } catch (err) {
+      console.error('Failed to copy weekly breakdown:', err)
+      setCopyStatus('failed')
+    }
+  }, [breakdown])
 
   return (
     <div className="flex gap-6">
@@ -369,14 +414,32 @@ export function WeeklySummaryView() {
             </button>
           </div>
           <div className="flex justify-end">
-            <ExportMenu
-              onExportPDF={handleExportPDF}
-              onExportMarkdown={handleExportMarkdown}
-              disabled={isLoading || filteredItems.length === 0}
-              isExporting={isExporting}
-            />
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={handleGenerateBreakdown}
+                disabled={isLoading || !data || data.items.length === 0 || generateBreakdown.isPending}
+              >
+                {generateBreakdown.isPending && <RefreshCw className="h-4 w-4 animate-spin" />}
+                Generate Breakdown
+              </Button>
+              <ExportMenu
+                onExportPDF={handleExportPDF}
+                onExportMarkdown={handleExportMarkdown}
+                disabled={isLoading || filteredItems.length === 0}
+                isExporting={isExporting}
+              />
+            </div>
           </div>
         </div>
+
+        {generateBreakdown.isError && (
+          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+            {generateBreakdown.error instanceof Error
+              ? generateBreakdown.error.message
+              : 'Unable to generate weekly breakdown.'}
+          </div>
+        )}
 
         {/* Content */}
         {isLoading ? (
@@ -464,6 +527,55 @@ export function WeeklySummaryView() {
         item={selectedItem}
         onClose={() => setSelectedItem(null)}
       />
+
+      {showBreakdownModal && breakdown && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-3xl rounded-xl border border-border bg-background p-6 shadow-xl">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-semibold text-foreground">Weekly Breakdown</h3>
+                <p className="text-sm text-muted-foreground">{breakdown.title}</p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowBreakdownModal(false)
+                  setCopyStatus('idle')
+                }}
+                className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                aria-label="Close weekly breakdown"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <textarea
+              readOnly
+              value={breakdown.breakdownText}
+              className="min-h-[340px] w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none"
+            />
+
+            <div className="mt-4 flex items-center justify-between gap-3">
+              <p className="text-sm text-muted-foreground">
+                {copyStatus === 'copied' && 'Copied to clipboard.'}
+                {copyStatus === 'failed' && 'Copy failed. Select and copy manually.'}
+                {copyStatus === 'idle' && 'Copy and paste this into your external update tools.'}
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowBreakdownModal(false)
+                    setCopyStatus('idle')
+                  }}
+                >
+                  Close
+                </Button>
+                <Button onClick={handleCopyBreakdown}>Copy</Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -3,10 +3,10 @@
 //! This module provides OAuth 2.0 (3LO) authentication with PKCE and data
 //! synchronization for Jira and Confluence.
 
-mod types;
 mod client;
 mod sync;
+mod types;
 
-pub use types::{AtlassianError, AtlassianTokens, CloudResource, JiraIssue, ConfluencePage};
 pub use client::AtlassianClient;
 pub use sync::AtlassianSyncService;
+pub use types::{AtlassianError, AtlassianTokens, CloudResource, ConfluencePage, JiraIssue};
