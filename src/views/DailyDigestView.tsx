@@ -54,10 +54,17 @@ export function DailyDigestView() {
       const result = await api.resyncHistoricalDay(dateStr, timezoneOffset)
       
       if (result.errors.length > 0) {
-        updateLocalActivity(activityId, {
-          status: 'failed',
-          error: result.errors.join(', '),
-        })
+        if (result.itemsSynced > 0) {
+          updateLocalActivity(activityId, {
+            status: 'completed',
+            message: `Resynced ${dateLabel} (${result.itemsSynced} items, with warnings)`,
+          })
+        } else {
+          updateLocalActivity(activityId, {
+            status: 'failed',
+            error: result.errors.join(', '),
+          })
+        }
       } else {
         updateLocalActivity(activityId, {
           status: 'completed',

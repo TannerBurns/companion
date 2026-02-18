@@ -156,6 +156,14 @@ pub struct ChannelHistoryResponse {
     pub next_cursor: Option<String>,
 }
 
+/// Response from the Slack conversations.replies API with pagination info
+#[derive(Debug, Clone)]
+pub struct ThreadRepliesResponse {
+    pub messages: Vec<SlackMessage>,
+    pub has_more: bool,
+    pub next_cursor: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct SyncResult {
     pub source: String,

@@ -28,6 +28,8 @@ const MAX_CONCURRENT_SYNCS: usize = 2;
 const API_CALL_DELAY_MS: u64 = 500;
 const MAX_RETRIES: u32 = 3;
 const RETRY_BASE_DELAY_MS: u64 = 2000;
+const HISTORY_PAGE_SIZE: usize = 100;
+const THREAD_REPLIES_PAGE_SIZE: usize = 200;
 
 fn get_today_start_ts() -> String {
     let now = chrono::Utc::now();
@@ -253,7 +255,7 @@ impl SlackSyncService {
                             oldest.as_deref(),
                             None, // No upper bound for incremental sync
                             api_cursor.as_deref(),
-                            100,
+                            HISTORY_PAGE_SIZE,
                         )
                         .await
                 })
@@ -276,20 +278,9 @@ impl SlackSyncService {
                 items_synced += 1;
 
                 if msg.reply_count.map(|c| c > 0).unwrap_or(false) {
-                    sleep(Duration::from_millis(API_CALL_DELAY_MS)).await;
-                    let thread_ts = msg.thread_ts.as_ref().unwrap_or(&msg.ts);
-                    let replies = self
-                        .fetch_with_retry(|| async {
-                            self.client
-                                .get_thread_replies(&channel.channel_id, thread_ts)
-                                .await
-                        })
+                    items_synced += self
+                        .sync_thread_replies(&channel.channel_id, &slack_channel, msg)
                         .await?;
-
-                    for reply in replies.iter().skip(1) {
-                        self.store_message(&slack_channel, reply).await?;
-                        items_synced += 1;
-                    }
                 }
             }
 
@@ -439,7 +430,7 @@ impl SlackSyncService {
                             Some(oldest),
                             Some(latest),
                             api_cursor.as_deref(),
-                            100,
+                            HISTORY_PAGE_SIZE,
                         )
                         .await
                 })
@@ -457,20 +448,9 @@ impl SlackSyncService {
                 items_synced += 1;
 
                 if msg.reply_count.map(|c| c > 0).unwrap_or(false) {
-                    sleep(Duration::from_millis(API_CALL_DELAY_MS)).await;
-                    let thread_ts = msg.thread_ts.as_ref().unwrap_or(&msg.ts);
-                    let replies = self
-                        .fetch_with_retry(|| async {
-                            self.client
-                                .get_thread_replies(&channel.channel_id, thread_ts)
-                                .await
-                        })
+                    items_synced += self
+                        .sync_thread_replies(&channel.channel_id, &slack_channel, msg)
                         .await?;
-
-                    for reply in replies.iter().skip(1) {
-                        self.store_message(&slack_channel, reply).await?;
-                        items_synced += 1;
-                    }
                 }
             }
 
@@ -491,6 +471,60 @@ impl SlackSyncService {
             items_synced,
             channel.channel_name
         );
+        Ok(items_synced)
+    }
+
+    async fn sync_thread_replies(
+        &self,
+        channel_id: &str,
+        slack_channel: &SlackChannel,
+        parent_message: &SlackMessage,
+    ) -> Result<i32, SlackError> {
+        sleep(Duration::from_millis(API_CALL_DELAY_MS)).await;
+
+        let thread_ts = parent_message.thread_ts.as_deref().unwrap_or(&parent_message.ts);
+        let mut items_synced = 0;
+        let mut cursor: Option<String> = None;
+        let mut is_first_page = true;
+
+        loop {
+            let response = self
+                .fetch_with_retry(|| async {
+                    self.client
+                        .get_thread_replies_page(
+                            channel_id,
+                            thread_ts,
+                            cursor.as_deref(),
+                            THREAD_REPLIES_PAGE_SIZE,
+                        )
+                        .await
+                })
+                .await?;
+
+            for reply in &response.messages {
+                if reply.ts == parent_message.ts {
+                    continue;
+                }
+                if is_first_page && reply.ts == thread_ts {
+                    continue;
+                }
+                self.store_message(slack_channel, reply).await?;
+                items_synced += 1;
+            }
+            is_first_page = false;
+
+            if !response.has_more {
+                break;
+            }
+
+            cursor = response.next_cursor;
+            if cursor.is_none() {
+                break;
+            }
+
+            sleep(Duration::from_millis(API_CALL_DELAY_MS)).await;
+        }
+
         Ok(items_synced)
     }
 

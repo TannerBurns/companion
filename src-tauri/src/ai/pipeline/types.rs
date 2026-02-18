@@ -2,6 +2,8 @@ use serde::Serialize;
 
 pub const HIERARCHICAL_CHANNEL_THRESHOLD: usize = 50;
 pub const HIERARCHICAL_TOTAL_THRESHOLD: usize = 200;
+pub const HISTORICAL_AI_CHUNK_SIZE: i64 = 150;
+pub const HIERARCHICAL_CHANNEL_CHUNK_SIZE: usize = 80;
 
 /// Database row for content items
 #[derive(sqlx::FromRow)]
@@ -27,7 +29,7 @@ pub struct SlackUserRow {
 }
 
 /// Message formatted for AI prompts
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 pub struct MessageForPrompt {
     pub id: String,
     pub channel: String,

@@ -4,6 +4,7 @@ use crate::ai::ProcessingPipeline;
 use crate::pipeline::PipelineTaskType;
 use crate::sync::{sync_slack_historical_day, sync_slack_now};
 use crate::AppState;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tauri::State;
 use tokio::sync::Mutex;
@@ -210,14 +211,30 @@ pub async fn resync_historical_day(
 ) -> Result<SyncResult, String> {
     tracing::info!("Historical resync requested for date: {}", date);
 
-    let (db, crypto, pipeline) = {
+    let (db, crypto, pipeline, sync_lock, is_syncing) = {
         let state = state.lock().await;
         (
             state.db.clone(),
             std::sync::Arc::new(state.crypto.clone()),
             state.pipeline.clone(),
+            state.sync_lock.clone(),
+            state.is_syncing.clone(),
         )
     };
+
+    let _sync_guard = match sync_lock.try_lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            tracing::warn!("Sync already in progress, skipping historical resync request");
+            return Ok(SyncResult {
+                items_synced: 0,
+                channels_processed: 0,
+                errors: vec!["Sync already in progress".to_string()],
+            });
+        }
+    };
+
+    is_syncing.store(true, Ordering::SeqCst);
 
     let mut total_items = 0;
     let mut errors: Vec<String> = Vec::new();
@@ -233,13 +250,15 @@ pub async fn resync_historical_day(
     };
 
     match sync_slack_historical_day(db.clone(), crypto.clone(), &date, timezone_offset).await {
-        Ok(items) => {
+        Ok(result) => {
+            let items = result.items_synced;
             tracing::info!(
                 "Historical Slack sync completed: {} items for {}",
                 items,
                 date
             );
             total_items = items;
+            errors.extend(result.errors.into_iter().map(|e| format!("Slack: {}", e)));
 
             let pipeline = pipeline.lock().await;
             let message = if items > 0 {
@@ -312,6 +331,8 @@ pub async fn resync_historical_day(
         total_items,
         errors
     );
+
+    is_syncing.store(false, Ordering::SeqCst);
 
     Ok(SyncResult {
         items_synced: total_items,

@@ -397,7 +397,7 @@ pub async fn sync_slack_historical_day(
     crypto: Arc<CryptoService>,
     date_str: &str,
     timezone_offset_minutes: i32,
-) -> Result<i32, String> {
+) -> Result<crate::sync::SyncResult, String> {
     let result: Option<(String,)> =
         sqlx::query_as("SELECT encrypted_data FROM credentials WHERE id = 'slack'")
             .fetch_optional(db.pool())
@@ -435,5 +435,5 @@ pub async fn sync_slack_historical_day(
         result.items_synced
     );
 
-    Ok(result.items_synced)
+    Ok(result)
 }
