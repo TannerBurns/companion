@@ -1,7 +1,8 @@
 fn format_user_guidance(guidance: Option<&str>) -> String {
     match guidance {
         Some(g) if !g.trim().is_empty() => {
-            format!(r##"
+            format!(
+                r##"
 USER PREFERENCES:
 The user has provided the following guidance for what they care about:
 "{}"
@@ -9,7 +10,9 @@ The user has provided the following guidance for what they care about:
 Apply these preferences when determining what to include, prioritize, highlight, or filter out.
 Consider this guidance when scoring importance and selecting key information.
 
-"##, g.trim())
+"##,
+                g.trim()
+            )
         }
         _ => String::new(),
     }
@@ -17,7 +20,8 @@ Consider this guidance when scoring importance and selecting key information.
 
 /// Generate a prompt for analyzing Slack messages.
 pub fn slack_message_prompt(channel: &str, messages: &str) -> String {
-    format!(r#"Analyze this Slack conversation from #{channel} and provide a JSON response:
+    format!(
+        r#"Analyze this Slack conversation from #{channel} and provide a JSON response:
 
 {messages}
 
@@ -33,12 +37,14 @@ Return JSON with this structure:
     "projects": ["mentioned projects"],
     "topics": ["key topics"]
   }}
-}}"#)
+}}"#
+    )
 }
 
 /// Generate a prompt for analyzing Jira issues.
 pub fn jira_issue_prompt(key: &str, summary: &str, description: &str) -> String {
-    format!(r#"Analyze this Jira issue and provide a JSON response:
+    format!(
+        r#"Analyze this Jira issue and provide a JSON response:
 
 Issue: {key}
 Summary: {summary}
@@ -56,11 +62,12 @@ Return JSON with this structure:
     "projects": ["mentioned projects"],
     "topics": ["key topics"]
   }}
-}}"#)
+}}"#
+    )
 }
 
 /// Generate a prompt for analyzing Confluence pages.
-/// 
+///
 /// Content is automatically truncated at 8000 bytes at a valid UTF-8 boundary.
 pub fn confluence_page_prompt(title: &str, space: &str, content: &str) -> String {
     // Truncate at a safe UTF-8 boundary to avoid panics with multi-byte characters
@@ -73,8 +80,9 @@ pub fn confluence_page_prompt(title: &str, space: &str, content: &str) -> String
     } else {
         content
     };
-    
-    format!(r#"Analyze this Confluence page and provide a JSON response:
+
+    format!(
+        r#"Analyze this Confluence page and provide a JSON response:
 
 Title: {title}
 Space: {space}
@@ -92,13 +100,15 @@ Return JSON with this structure:
     "projects": ["mentioned projects"],
     "topics": ["key topics"]
   }}
-}}"#)
+}}"#
+    )
 }
 
 /// Generate a prompt for creating a daily digest.
 pub fn daily_digest_prompt(date: &str, items_json: &str, user_guidance: Option<&str>) -> String {
     let guidance_section = format_user_guidance(user_guidance);
-    format!(r#"Create a daily digest summary for {date} from these items:
+    format!(
+        r#"Create a daily digest summary for {date} from these items:
 
 {items_json}
 {guidance_section}
@@ -111,13 +121,19 @@ Return JSON with this structure:
     {{"title": "item title", "reason": "why this is important"}}
   ],
   "action_items": ["suggested action 1", "suggested action 2"]
-}}"#)
+}}"#
+    )
 }
 
 /// Generate a prompt for creating a weekly digest.
-pub fn weekly_digest_prompt(week_start: &str, daily_summaries: &str, user_guidance: Option<&str>) -> String {
+pub fn weekly_digest_prompt(
+    week_start: &str,
+    daily_summaries: &str,
+    user_guidance: Option<&str>,
+) -> String {
     let guidance_section = format_user_guidance(user_guidance);
-    format!(r#"Create a weekly digest summary for the week of {week_start}:
+    format!(
+        r#"Create a weekly digest summary for the week of {week_start}:
 
 {daily_summaries}
 {guidance_section}
@@ -130,7 +146,43 @@ Return JSON with this structure:
     {{"title": "second important item", "reason": "why this matters"}}
   ],
   "action_items": ["suggested priority 1", "suggested priority 2"]
-}}"#)
+}}"#
+    )
+}
+
+/// Generate a prompt for creating a weekly update breakdown.
+pub fn weekly_breakdown_prompt(
+    week_range: &str,
+    daily_summaries_json: &str,
+    user_guidance: Option<&str>,
+) -> String {
+    let guidance_section = format_user_guidance(user_guidance);
+    format!(
+        r#"Create an executive weekly status update breakdown for {week_range}.
+
+Use all provided daily summaries to identify the most important outcomes.
+Keep bullets concise, specific, and copy/paste-ready.
+Avoid speculation and avoid repeating the same point across sections.
+
+Daily summaries input:
+{daily_summaries_json}
+{guidance_section}
+Return JSON with this exact structure:
+{{
+  "major": ["major achievement or issue", "major achievement or issue"],
+  "focus": ["priority focus area", "priority focus area"],
+  "obstacles": ["key blocker or risk", "key blocker or risk"],
+  "informational": ["notable update", "notable update"]
+}}
+
+Guidelines:
+- `major`: 2-5 bullets for the highest-impact outcomes, incidents, or milestones
+- `focus`: 2-5 bullets for active priorities and near-term execution focus
+- `obstacles`: 1-4 bullets for blockers/noise/risks that slowed progress
+- `informational`: 2-6 bullets for useful context updates that are not top priorities
+- Keep each bullet to one sentence and business-relevant
+- If a section has no strong signal, return an empty array for that section"#
+    )
 }
 
 /// Generate a prompt for batch analysis of messages.
@@ -152,7 +204,8 @@ pub fn batch_analysis_prompt_with_existing(
 ) -> String {
     let guidance_section = format_user_guidance(user_guidance);
     let existing_context = if let Some(topics_json) = existing_topics {
-        format!(r##"
+        format!(
+            r##"
 EXISTING TOPICS FROM EARLIER TODAY:
 The following topics were already identified from earlier sync cycles today. When you encounter new messages that relate to these existing topics, you should MERGE them into the existing topic rather than creating a new one.
 
@@ -166,7 +219,8 @@ IMPORTANT MERGING RULES:
 - Only create a NEW topic if the discussion is genuinely different from all existing topics
 - When updating an existing topic, use the SAME topic_id from the existing topic
 
-"##)
+"##
+        )
     } else {
         String::new()
     };
@@ -177,7 +231,8 @@ IMPORTANT MERGING RULES:
         r#""topic_id": null,"#
     };
 
-    format!(r##"You are analyzing all messages from {date} across multiple Slack channels and direct messages.
+    format!(
+        r##"You are analyzing all messages from {date} across multiple Slack channels and direct messages.
 {existing_context}{guidance_section}Your task is to:
 1. Identify related discussions that span multiple channels (e.g., a product launch discussed in #product, #marketing, and #sales)
 2. Group related messages together by topic/theme
@@ -227,7 +282,8 @@ Guidelines:
 - Identify action items that emerge from discussions
 - The daily_summary should give an executive the key takeaways in 30 seconds
 - topic_id: When updating an existing topic, copy the exact topic_id string from the existing topics list. For new topics, set topic_id to null
-- key_message_ids: Select 1-3 of the MOST IMPORTANT messages that would be best for jumping back into the original conversation. Choose messages that provide the most context or contain key decisions/information. These will be shown as direct links to Slack."##)
+- key_message_ids: Select 1-3 of the MOST IMPORTANT messages that would be best for jumping back into the original conversation. Choose messages that provide the most context or contain key decisions/information. These will be shown as direct links to Slack."##
+    )
 }
 
 /// Generate a prompt for summarizing a single channel.
@@ -244,7 +300,8 @@ pub fn channel_summary_prompt(
         .unwrap_or_default();
     let guidance_section = format_user_guidance(user_guidance);
 
-    format!(r##"Summarize the discussion in #{channel}.
+    format!(
+        r##"Summarize the discussion in #{channel}.
 {purpose_line}
 Messages:
 {messages_json}
@@ -262,7 +319,8 @@ Return JSON with this structure:
 Guidelines:
 - Focus on the most significant discussions and decisions
 - importance_score: 0.9-1.0 for critical decisions, 0.6-0.8 for important updates, 0.3-0.5 for routine
-- notable_message_ids: include IDs of the 2-5 most important messages"##)
+- notable_message_ids: include IDs of the 2-5 most important messages"##
+    )
 }
 
 /// Generate a prompt for cross-channel grouping.
@@ -276,14 +334,19 @@ pub fn cross_channel_grouping_prompt(
     user_guidance: Option<&str>,
 ) -> String {
     let ungrouped_section = ungrouped_messages_json
-        .map(|json| format!(r##"
+        .map(|json| {
+            format!(
+                r##"
 MESSAGES FROM LOW-VOLUME CHANNELS (process directly):
 {json}
-"##))
+"##
+            )
+        })
         .unwrap_or_default();
     let guidance_section = format_user_guidance(user_guidance);
 
-    format!(r##"You are creating a daily digest for {date} by combining summaries from multiple Slack channels.
+    format!(
+        r##"You are creating a daily digest for {date} by combining summaries from multiple Slack channels.
 
 CHANNEL SUMMARIES:
 {channel_summaries_json}
@@ -317,7 +380,8 @@ Guidelines:
 - A channel's content can be split across multiple topic groups
 - importance_score: based on business impact, not just activity level
 - Include action items that emerge from discussions
-- key_message_ids: Select 1-3 of the MOST IMPORTANT messages for jumping back into the conversation"##)
+- key_message_ids: Select 1-3 of the MOST IMPORTANT messages for jumping back into the conversation"##
+    )
 }
 
 #[cfg(test)]
@@ -354,7 +418,7 @@ mod tests {
     fn test_confluence_page_prompt_truncates_long_content() {
         let long_content = "x".repeat(10000);
         let prompt = confluence_page_prompt("Title", "Space", &long_content);
-        
+
         // Should contain truncated content (8000 chars), not full 10000
         assert!(prompt.len() < 10000);
         assert!(prompt.contains(&"x".repeat(100)));
@@ -365,10 +429,10 @@ mod tests {
         // Create content with multi-byte UTF-8 characters
         let prefix = "x".repeat(7998);
         let emoji_content = format!("{}🎉🎉🎉", prefix);
-        
+
         // This should not panic and should truncate at a valid UTF-8 boundary
         let prompt = confluence_page_prompt("Title", "Space", &emoji_content);
-        
+
         assert!(prompt.is_char_boundary(0));
         assert!(prompt.contains(&"x".repeat(100)));
     }
@@ -403,7 +467,12 @@ mod tests {
         let messages = r##"[{"id": "1", "channel": "#general", "text": "More about the launch"}]"##;
         let existing_topics = r##"[{"topic_id": "topic_123", "topic": "Q1 Launch"}]"##;
 
-        let prompt = batch_analysis_prompt_with_existing("2024-01-15", messages, Some(existing_topics), None);
+        let prompt = batch_analysis_prompt_with_existing(
+            "2024-01-15",
+            messages,
+            Some(existing_topics),
+            None,
+        );
 
         assert!(prompt.contains("EXISTING TOPICS FROM EARLIER TODAY"));
         assert!(prompt.contains("topic_123"));
@@ -435,11 +504,13 @@ mod tests {
     fn test_batch_analysis_prompt_includes_topic_id_instruction() {
         let messages = r##"[{"id": "1", "channel": "#test", "text": "Test"}]"##;
 
-        let prompt_without = batch_analysis_prompt_with_existing("2024-01-15", messages, None, None);
+        let prompt_without =
+            batch_analysis_prompt_with_existing("2024-01-15", messages, None, None);
         assert!(prompt_without.contains(r#""topic_id": null"#));
 
         let existing = r##"[{"topic_id": "t1", "topic": "Test"}]"##;
-        let prompt_with = batch_analysis_prompt_with_existing("2024-01-15", messages, Some(existing), None);
+        let prompt_with =
+            batch_analysis_prompt_with_existing("2024-01-15", messages, Some(existing), None);
         assert!(prompt_with.contains(r#""topic_id": "topic_abc123""#));
     }
 
@@ -474,7 +545,8 @@ mod tests {
 
     #[test]
     fn test_cross_channel_grouping_prompt_with_ungrouped() {
-        let prompt = cross_channel_grouping_prompt("2024-01-20", "[]", Some("[{\"id\":\"1\"}]"), None);
+        let prompt =
+            cross_channel_grouping_prompt("2024-01-20", "[]", Some("[{\"id\":\"1\"}]"), None);
         assert!(prompt.contains("MESSAGES FROM LOW-VOLUME CHANNELS"));
         assert!(prompt.contains("[{\"id\":\"1\"}]"));
     }
@@ -487,7 +559,12 @@ mod tests {
 
     #[test]
     fn test_format_user_guidance_with_guidance() {
-        let prompt = batch_analysis_prompt_with_existing("2024-01-15", "[]", None, Some("Focus on production issues"));
+        let prompt = batch_analysis_prompt_with_existing(
+            "2024-01-15",
+            "[]",
+            None,
+            Some("Focus on production issues"),
+        );
         assert!(prompt.contains("USER PREFERENCES"));
         assert!(prompt.contains("Focus on production issues"));
     }
@@ -527,7 +604,8 @@ mod tests {
 
     #[test]
     fn test_cross_channel_with_guidance() {
-        let prompt = cross_channel_grouping_prompt("2024-01-20", "[]", None, Some("Focus on sales topics"));
+        let prompt =
+            cross_channel_grouping_prompt("2024-01-20", "[]", None, Some("Focus on sales topics"));
         assert!(prompt.contains("USER PREFERENCES"));
         assert!(prompt.contains("Focus on sales topics"));
     }

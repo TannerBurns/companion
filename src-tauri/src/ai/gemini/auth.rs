@@ -1,8 +1,8 @@
-use serde::{Deserialize, Serialize};
-use chrono::{DateTime, Utc, Duration};
-use jsonwebtoken::{encode, EncodingKey, Header, Algorithm};
-use reqwest::Client;
 use super::types::{GeminiError, DEFAULT_VERTEX_REGION};
+use chrono::{DateTime, Duration, Utc};
+use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
 
 /// Google Cloud Service Account credentials parsed from JSON file.
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -26,7 +26,9 @@ pub struct ServiceAccountCredentials {
 impl ServiceAccountCredentials {
     /// Get the Vertex AI region, defaulting to "global".
     pub fn region(&self) -> &str {
-        self.vertex_region.as_deref().unwrap_or(DEFAULT_VERTEX_REGION)
+        self.vertex_region
+            .as_deref()
+            .unwrap_or(DEFAULT_VERTEX_REGION)
     }
 }
 
@@ -70,7 +72,10 @@ pub async fn get_access_token(
     http: &Client,
     credentials: &ServiceAccountCredentials,
 ) -> Result<CachedToken, GeminiError> {
-    tracing::info!("Generating new OAuth2 access token for service account: {}", credentials.client_email);
+    tracing::info!(
+        "Generating new OAuth2 access token for service account: {}",
+        credentials.client_email
+    );
 
     let now = Utc::now();
     let claims = JwtClaims {
@@ -87,14 +92,16 @@ pub async fn get_access_token(
             tracing::error!("Invalid private key format: {}", e);
             GeminiError::Jwt(format!("Invalid private key format. Ensure you're using a valid service account JSON file. Error: {}", e))
         })?;
-    
-    let jwt = encode(&header, &claims, &key)
-        .map_err(|e| {
-            tracing::error!("Failed to encode JWT: {}", e);
-            GeminiError::Jwt(format!("Failed to sign JWT token: {}", e))
-        })?;
 
-    tracing::debug!("Exchanging JWT for access token at: {}", credentials.token_uri);
+    let jwt = encode(&header, &claims, &key).map_err(|e| {
+        tracing::error!("Failed to encode JWT: {}", e);
+        GeminiError::Jwt(format!("Failed to sign JWT token: {}", e))
+    })?;
+
+    tracing::debug!(
+        "Exchanging JWT for access token at: {}",
+        credentials.token_uri
+    );
 
     // Exchange JWT for access token
     let response = http
@@ -112,7 +119,10 @@ pub async fn get_access_token(
 
     let status = response.status();
     if !status.is_success() {
-        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
         tracing::error!("Token exchange failed ({}): {}", status, error_text);
         return Err(GeminiError::Auth(format!(
             "OAuth token exchange failed (HTTP {}): {}",
@@ -121,13 +131,15 @@ pub async fn get_access_token(
         )));
     }
 
-    let token_response: TokenResponse = response.json().await
-        .map_err(|e| {
-            tracing::error!("Failed to parse token response: {}", e);
-            GeminiError::Parse(format!("Failed to parse token response: {}", e))
-        })?;
+    let token_response: TokenResponse = response.json().await.map_err(|e| {
+        tracing::error!("Failed to parse token response: {}", e);
+        GeminiError::Parse(format!("Failed to parse token response: {}", e))
+    })?;
 
-    tracing::info!("Successfully obtained access token (expires in {} seconds)", token_response.expires_in);
+    tracing::info!(
+        "Successfully obtained access token (expires in {} seconds)",
+        token_response.expires_in
+    );
 
     Ok(CachedToken {
         access_token: token_response.access_token,
@@ -153,7 +165,7 @@ mod tests {
             "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
             "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/sa%40my-project.iam.gserviceaccount.com"
         }"#;
-        
+
         let creds: ServiceAccountCredentials = serde_json::from_str(json).unwrap();
         assert_eq!(creds.project_id, "my-project");
         assert_eq!(creds.client_email, "sa@my-project.iam.gserviceaccount.com");
@@ -171,7 +183,7 @@ mod tests {
             "token_uri": "https://oauth2.googleapis.com/token",
             "vertex_region": "asia-northeast1"
         }"#;
-        
+
         let creds: ServiceAccountCredentials = serde_json::from_str(json).unwrap();
         assert_eq!(creds.region(), "asia-northeast1");
     }
@@ -191,7 +203,7 @@ mod tests {
             client_x509_cert_url: None,
             vertex_region: None,
         };
-        
+
         assert_eq!(creds.region(), "global");
     }
 
@@ -210,7 +222,7 @@ mod tests {
             client_x509_cert_url: None,
             vertex_region: Some("europe-west1".to_string()),
         };
-        
+
         assert_eq!(creds.region(), "europe-west1");
     }
 
@@ -220,7 +232,7 @@ mod tests {
             access_token: "test_token".to_string(),
             expires_at: Utc::now() + Duration::hours(1),
         };
-        
+
         assert_eq!(token.access_token, "test_token");
         assert!(token.expires_at > Utc::now());
     }

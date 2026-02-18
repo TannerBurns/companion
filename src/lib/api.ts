@@ -29,6 +29,17 @@ export interface DigestResponse {
   categories: CategorySummary[]
 }
 
+export interface WeeklyBreakdownResponse {
+  weekStart: string
+  weekEnd: string
+  title: string
+  major: string[]
+  focus: string[]
+  obstacles: string[]
+  informational: string[]
+  breakdownText: string
+}
+
 export interface SyncStatus {
   isSyncing: boolean
   lastSyncAt?: number
@@ -107,6 +118,9 @@ export const api = {
 
   getWeeklyDigest: (weekStart?: string, timezoneOffset?: number) =>
     invoke<DigestResponse>('get_weekly_digest', { weekStart, timezoneOffset }),
+
+  generateWeeklyBreakdown: (weekStart?: string, timezoneOffset?: number) =>
+    invoke<WeeklyBreakdownResponse>('generate_weekly_breakdown', { weekStart, timezoneOffset }),
 
   startSync: (sources?: string[], timezoneOffset?: number) =>
     invoke<{ itemsSynced: number; channelsProcessed: number; errors: string[] }>('start_sync', { sources, timezoneOffset }),

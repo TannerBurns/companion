@@ -5,8 +5,6 @@ import { useDailyDigest } from '../hooks/useDigest'
 import { ContentCard, ContentDetailModal, ExportMenu } from '../components'
 import { Button } from '../components/ui/Button'
 import { useAppStore } from '../store'
-import { exportDigestPDF } from '../lib/pdf'
-import { exportDigestMarkdown } from '../lib/markdown'
 import { api } from '../lib/api'
 import {
   filterDigestItems,
@@ -113,6 +111,7 @@ export function DailyDigestView() {
     })
     
     try {
+      const { exportDigestPDF } = await import('../lib/pdf')
       // Create a filtered digest to export only visible items
       const filteredDigest = {
         ...data,
@@ -153,6 +152,7 @@ export function DailyDigestView() {
     })
     
     try {
+      const { exportDigestMarkdown } = await import('../lib/markdown')
       // Create a filtered digest to export only visible items
       const filteredDigest = {
         ...data,

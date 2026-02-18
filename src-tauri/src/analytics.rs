@@ -40,14 +40,12 @@ impl AnalyticsService {
     pub async fn track(&self, event: AnalyticsEvent) -> Result<(), sqlx::Error> {
         let now = chrono::Utc::now().timestamp();
 
-        sqlx::query(
-            "INSERT INTO analytics (event_type, event_data, created_at) VALUES (?, ?, ?)",
-        )
-        .bind(&event.event_type)
-        .bind(serde_json::to_string(&event.event_data).unwrap_or_default())
-        .bind(now)
-        .execute(self.db.pool())
-        .await?;
+        sqlx::query("INSERT INTO analytics (event_type, event_data, created_at) VALUES (?, ?, ?)")
+            .bind(&event.event_type)
+            .bind(serde_json::to_string(&event.event_data).unwrap_or_default())
+            .bind(now)
+            .execute(self.db.pool())
+            .await?;
 
         Ok(())
     }
@@ -162,10 +160,7 @@ impl AnalyticsService {
         })
     }
 
-    pub async fn get_event_counts(
-        &self,
-        days: i32,
-    ) -> Result<Vec<(String, i64)>, sqlx::Error> {
+    pub async fn get_event_counts(&self, days: i32) -> Result<Vec<(String, i64)>, sqlx::Error> {
         let since = chrono::Utc::now().timestamp() - (days as i64 * 86400);
 
         let counts: Vec<(String, i64)> = sqlx::query_as(

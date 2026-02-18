@@ -1,22 +1,22 @@
 // Library entry point for Tauri
+pub mod ai;
+pub mod analytics;
 pub mod commands;
 pub mod crypto;
 pub mod db;
-pub mod ai;
-pub mod sync;
 pub mod notifications;
-pub mod analytics;
 pub mod pipeline;
+pub mod sync;
 pub mod tray;
 
-use db::Database;
-use crypto::CryptoService;
-use notifications::NotificationService;
 use analytics::AnalyticsService;
+use crypto::CryptoService;
+use db::Database;
+use notifications::NotificationService;
 use pipeline::PipelineManager;
-use sync::{SyncQueue, BackgroundSyncService};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicI64};
+use std::sync::Arc;
+use sync::{BackgroundSyncService, SyncQueue};
 
 pub struct AppState {
     pub db: Arc<Database>,

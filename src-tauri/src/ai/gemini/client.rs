@@ -1,13 +1,12 @@
+use super::auth::{get_access_token, CachedToken, GeminiAuth, ServiceAccountCredentials};
+use super::types::{
+    Content, GeminiError, GenerateRequest, GenerateResponse, GenerationConfig, Part, GEMINI_API_URL,
+};
+use chrono::{Duration, Utc};
 use reqwest::Client;
 use serde::Deserialize;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use chrono::{Utc, Duration};
-use super::auth::{GeminiAuth, ServiceAccountCredentials, CachedToken, get_access_token};
-use super::types::{
-    GeminiError, GenerateRequest, GenerateResponse, Content, Part, GenerationConfig,
-    GEMINI_API_URL,
-};
 
 /// Client for interacting with the Gemini API.
 pub struct GeminiClient {
@@ -46,7 +45,10 @@ impl GeminiClient {
     }
 
     /// Get an access token, using cache if available.
-    async fn get_cached_access_token(&self, credentials: &ServiceAccountCredentials) -> Result<String, GeminiError> {
+    async fn get_cached_access_token(
+        &self,
+        credentials: &ServiceAccountCredentials,
+    ) -> Result<String, GeminiError> {
         // Check cache first
         {
             let cache = self.token_cache.read().await;
@@ -73,20 +75,20 @@ impl GeminiClient {
     }
 
     /// Generate content using the Gemini API.
-    pub async fn generate(&self, request: GenerateRequest) -> Result<GenerateResponse, GeminiError> {
+    pub async fn generate(
+        &self,
+        request: GenerateRequest,
+    ) -> Result<GenerateResponse, GeminiError> {
         let (url, req_builder) = match &self.auth {
             GeminiAuth::ApiKey(key) => {
-                let url = format!(
-                    "{}/{}:generateContent",
-                    GEMINI_API_URL, self.model
-                );
+                let url = format!("{}/{}:generateContent", GEMINI_API_URL, self.model);
                 tracing::debug!("Using API key authentication with URL: {}", url);
                 let req = self.http.post(&url).json(&request).query(&[("key", key)]);
                 (url, req)
             }
             GeminiAuth::ServiceAccount(credentials) => {
                 let region = credentials.region();
-                
+
                 let url = if region == "global" {
                     format!(
                         "https://aiplatform.googleapis.com/v1/projects/{}/locations/{}/publishers/google/models/{}:generateContent",
@@ -98,9 +100,9 @@ impl GeminiClient {
                         region, credentials.project_id, region, self.model
                     )
                 };
-                
+
                 tracing::debug!("Vertex AI request to: {}", url);
-                
+
                 let token = self.get_cached_access_token(credentials).await?;
                 let req = self.http.post(&url).json(&request).bearer_auth(token);
                 (url, req)
@@ -115,9 +117,14 @@ impl GeminiClient {
         if !status.is_success() {
             let error_text = response.text().await?;
             tracing::error!("Gemini API error ({}): {}", status, error_text);
-            
-            let error_msg = if let Ok(json) = serde_json::from_str::<serde_json::Value>(&error_text) {
-                if let Some(message) = json.get("error").and_then(|e| e.get("message")).and_then(|m| m.as_str()) {
+
+            let error_msg = if let Ok(json) = serde_json::from_str::<serde_json::Value>(&error_text)
+            {
+                if let Some(message) = json
+                    .get("error")
+                    .and_then(|e| e.get("message"))
+                    .and_then(|m| m.as_str())
+                {
                     message.to_string()
                 } else {
                     error_text
@@ -125,8 +132,12 @@ impl GeminiClient {
             } else {
                 error_text
             };
-            
-            return Err(GeminiError::Api(format!("HTTP {}: {}", status.as_u16(), error_msg)));
+
+            return Err(GeminiError::Api(format!(
+                "HTTP {}: {}",
+                status.as_u16(),
+                error_msg
+            )));
         }
 
         Ok(response.json().await?)
@@ -135,11 +146,13 @@ impl GeminiClient {
     /// Verify the connection by making a simple API call.
     pub async fn verify_connection(&self) -> Result<(), GeminiError> {
         tracing::info!("Verifying Gemini connection...");
-        
+
         let request = GenerateRequest {
             contents: vec![Content {
                 role: "user".to_string(),
-                parts: vec![Part::Text { text: "Hello".to_string() }],
+                parts: vec![Part::Text {
+                    text: "Hello".to_string(),
+                }],
             }],
             tools: None,
             generation_config: Some(GenerationConfig {
@@ -166,7 +179,9 @@ impl GeminiClient {
         let request = GenerateRequest {
             contents: vec![Content {
                 role: "user".to_string(),
-                parts: vec![Part::Text { text: prompt.to_string() }],
+                parts: vec![Part::Text {
+                    text: prompt.to_string(),
+                }],
             }],
             tools: None,
             generation_config: Some(GenerationConfig {
@@ -177,8 +192,9 @@ impl GeminiClient {
         };
 
         let response = self.generate(request).await?;
-        
-        response.candidates
+
+        response
+            .candidates
             .first()
             .and_then(|c| c.content.parts.first())
             .and_then(|p| match p {
@@ -196,7 +212,9 @@ impl GeminiClient {
         let request = GenerateRequest {
             contents: vec![Content {
                 role: "user".to_string(),
-                parts: vec![Part::Text { text: prompt.to_string() }],
+                parts: vec![Part::Text {
+                    text: prompt.to_string(),
+                }],
             }],
             tools: None,
             generation_config: Some(GenerationConfig {
@@ -207,8 +225,9 @@ impl GeminiClient {
         };
 
         let response = self.generate(request).await?;
-        
-        let text = response.candidates
+
+        let text = response
+            .candidates
             .first()
             .and_then(|c| c.content.parts.first())
             .and_then(|p| match p {
@@ -217,8 +236,7 @@ impl GeminiClient {
             })
             .ok_or_else(|| GeminiError::Parse("No text in response".into()))?;
 
-        serde_json::from_str(&text)
-            .map_err(|e| GeminiError::Parse(e.to_string()))
+        serde_json::from_str(&text).map_err(|e| GeminiError::Parse(e.to_string()))
     }
 }
 
@@ -238,8 +256,7 @@ mod tests {
 
     #[test]
     fn test_gemini_client_with_model() {
-        let client = GeminiClient::new("key".into())
-            .with_model("gemini-1.5-pro");
+        let client = GeminiClient::new("key".into()).with_model("gemini-1.5-pro");
         assert_eq!(client.model, "gemini-1.5-pro");
     }
 
@@ -249,7 +266,8 @@ mod tests {
             account_type: Some("service_account".to_string()),
             project_id: "test-project".to_string(),
             private_key_id: None,
-            private_key: "-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----".to_string(),
+            private_key: "-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----"
+                .to_string(),
             client_email: "test@test.iam.gserviceaccount.com".to_string(),
             client_id: None,
             auth_uri: None,
@@ -275,7 +293,8 @@ mod tests {
             account_type: Some("service_account".to_string()),
             project_id: "test-project".to_string(),
             private_key_id: None,
-            private_key: "-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----".to_string(),
+            private_key: "-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----"
+                .to_string(),
             client_email: "test@test.iam.gserviceaccount.com".to_string(),
             client_id: None,
             auth_uri: None,

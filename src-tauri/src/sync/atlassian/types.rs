@@ -7,19 +7,19 @@ use thiserror::Error;
 pub enum AtlassianError {
     #[error("HTTP error: {0}")]
     Http(#[from] reqwest::Error),
-    
+
     #[error("OAuth error: {0}")]
     OAuth(String),
-    
+
     #[error("API error: {0}")]
     Api(String),
-    
+
     #[error("Database error: {0}")]
     Database(#[from] sqlx::Error),
-    
+
     #[error("Crypto error: {0}")]
     Crypto(String),
-    
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -79,7 +79,7 @@ mod tests {
             expires_in: 3600,
             scope: "read:jira-work".into(),
         };
-        
+
         let json = serde_json::to_string(&tokens).unwrap();
         let parsed: AtlassianTokens = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.access_token, "eyJ...");
@@ -95,7 +95,7 @@ mod tests {
             expires_in: 3600,
             scope: "read:jira-work".into(),
         };
-        
+
         let json = serde_json::to_string(&tokens).unwrap();
         let parsed: AtlassianTokens = serde_json::from_str(&json).unwrap();
         assert!(parsed.refresh_token.is_none());
@@ -107,9 +107,12 @@ mod tests {
             id: "abc-123".into(),
             name: "My Workspace".into(),
             url: "https://myworkspace.atlassian.net".into(),
-            scopes: vec!["read:jira-work".into(), "read:confluence-content.all".into()],
+            scopes: vec![
+                "read:jira-work".into(),
+                "read:confluence-content.all".into(),
+            ],
         };
-        
+
         let json = serde_json::to_string(&resource).unwrap();
         let parsed: CloudResource = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.id, "abc-123");
@@ -131,7 +134,7 @@ mod tests {
             updated: "2024-01-16T14:30:00Z".into(),
             url: "https://test.atlassian.net/browse/TEST-123".into(),
         };
-        
+
         let json = serde_json::to_string(&issue).unwrap();
         let parsed: JiraIssue = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.key, "TEST-123");
@@ -153,7 +156,7 @@ mod tests {
             updated: "2024-01-15T10:00:00Z".into(),
             url: "https://test.atlassian.net/browse/TEST-456".into(),
         };
-        
+
         let json = serde_json::to_string(&issue).unwrap();
         let parsed: JiraIssue = serde_json::from_str(&json).unwrap();
         assert!(parsed.description.is_none());
@@ -172,7 +175,7 @@ mod tests {
             updated: "2024-01-12T16:00:00Z".into(),
             url: "https://test.atlassian.net/wiki/spaces/DOCS/pages/12345".into(),
         };
-        
+
         let json = serde_json::to_string(&page).unwrap();
         let parsed: ConfluencePage = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.title, "Getting Started");
@@ -183,10 +186,10 @@ mod tests {
     fn test_atlassian_error_display() {
         let err = AtlassianError::OAuth("Invalid grant".into());
         assert_eq!(err.to_string(), "OAuth error: Invalid grant");
-        
+
         let err = AtlassianError::Api("Not found".into());
         assert_eq!(err.to_string(), "API error: Not found");
-        
+
         let err = AtlassianError::Crypto("Decryption failed".into());
         assert_eq!(err.to_string(), "Crypto error: Decryption failed");
     }

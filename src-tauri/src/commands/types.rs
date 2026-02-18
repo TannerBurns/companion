@@ -31,6 +31,20 @@ pub struct DigestResponse {
     pub categories: Vec<CategorySummary>,
 }
 
+/// Response payload for generated weekly breakdown text.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WeeklyBreakdownResponse {
+    pub week_start: String,
+    pub week_end: String,
+    pub title: String,
+    pub major: Vec<String>,
+    pub focus: Vec<String>,
+    pub obstacles: Vec<String>,
+    pub informational: Vec<String>,
+    pub breakdown_text: String,
+}
+
 /// Summary of items in a category
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -125,7 +139,15 @@ pub struct AnalyticsSummary {
 }
 
 /// Type alias for group row from database
-pub type GroupRow = (String, String, Option<String>, Option<String>, Option<f64>, Option<String>, i64);
+pub type GroupRow = (
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    Option<f64>,
+    Option<String>,
+    i64,
+);
 
 pub struct ParsedEntities {
     pub title: String,
@@ -138,37 +160,50 @@ pub struct ParsedEntities {
 
 impl ParsedEntities {
     pub fn from_json(entities: &Option<String>) -> Self {
-        let value: serde_json::Value = entities.as_ref()
+        let value: serde_json::Value = entities
+            .as_ref()
             .and_then(|e| serde_json::from_str(e).ok())
             .unwrap_or(serde_json::json!({}));
-        
-        let title = value["topic"].as_str()
+
+        let title = value["topic"]
+            .as_str()
             .map(String::from)
             .unwrap_or_else(|| "Discussion".to_string());
-        
-        let channels: Option<Vec<String>> = value.get("channels")
+
+        let channels: Option<Vec<String>> = value
+            .get("channels")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .filter(|v: &Vec<String>| !v.is_empty());
-        
-        let people: Option<Vec<String>> = value.get("people")
+
+        let people: Option<Vec<String>> = value
+            .get("people")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .filter(|v: &Vec<String>| !v.is_empty());
-        
-        let message_ids: Vec<String> = value.get("message_ids")
+
+        let message_ids: Vec<String> = value
+            .get("message_ids")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default();
-        
-        let key_message_ids: Vec<String> = value.get("key_message_ids")
+
+        let key_message_ids: Vec<String> = value
+            .get("key_message_ids")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default();
-        
+
         let message_count: Option<i32> = if message_ids.is_empty() {
             None
         } else {
             Some(message_ids.len() as i32)
         };
-        
-        Self { title, channels, people, message_count, message_ids, key_message_ids }
+
+        Self {
+            title,
+            channels,
+            people,
+            message_count,
+            message_ids,
+            key_message_ids,
+        }
     }
 }
 
@@ -186,14 +221,17 @@ mod tests {
             category: "engineering".to_string(),
             source: "slack".to_string(),
             source_url: None,
-            source_urls: Some(vec!["https://slack.com/msg1".to_string(), "https://slack.com/msg2".to_string()]),
+            source_urls: Some(vec![
+                "https://slack.com/msg1".to_string(),
+                "https://slack.com/msg2".to_string(),
+            ]),
             importance_score: 0.8,
             created_at: 1234567890,
             channels: Some(vec!["#general".to_string()]),
             people: None,
             message_count: Some(5),
         };
-        
+
         let json = serde_json::to_string(&item).unwrap();
         assert!(json.contains("\"id\":\"test-1\""));
         assert!(json.contains("\"importanceScore\":0.8"));
@@ -213,7 +251,7 @@ mod tests {
             "importanceScore": 0.5,
             "createdAt": 1000
         }"#;
-        
+
         let item: DigestItem = serde_json::from_str(json).unwrap();
         assert_eq!(item.id, "test-1");
         assert_eq!(item.importance_score, 0.5);
@@ -225,7 +263,9 @@ mod tests {
         let prefs = Preferences::default();
         assert_eq!(prefs.sync_interval_minutes, 15);
         assert!(prefs.notifications_enabled);
-        assert!(prefs.enabled_categories.contains(&"engineering".to_string()));
+        assert!(prefs
+            .enabled_categories
+            .contains(&"engineering".to_string()));
         assert!(prefs.user_guidance.is_none());
     }
 
@@ -252,7 +292,7 @@ mod tests {
             channels_processed: 3,
             errors: vec!["error1".to_string()],
         };
-        
+
         let json = serde_json::to_string(&result).unwrap();
         assert!(json.contains("\"itemsSynced\":10"));
         assert!(json.contains("\"channelsProcessed\":3"));
@@ -260,14 +300,17 @@ mod tests {
 
     #[test]
     fn test_parsed_entities_from_json_full() {
-        let entities = Some(r##"{
+        let entities = Some(
+            r##"{
             "topic": "Sprint Planning",
             "channels": ["#engineering", "#product"],
             "people": ["Alice", "Bob"],
             "message_ids": ["msg1", "msg2", "msg3"],
             "key_message_ids": ["msg1", "msg3"]
-        }"##.to_string());
-        
+        }"##
+            .to_string(),
+        );
+
         let parsed = ParsedEntities::from_json(&entities);
         assert_eq!(parsed.title, "Sprint Planning");
         assert_eq!(parsed.channels.unwrap(), vec!["#engineering", "#product"]);
@@ -298,15 +341,18 @@ mod tests {
         assert!(parsed.message_ids.is_empty());
         assert!(parsed.key_message_ids.is_empty());
     }
-    
+
     #[test]
     fn test_parsed_entities_fallback_to_message_ids() {
         // When key_message_ids is missing, it should be empty
-        let entities = Some(r##"{
+        let entities = Some(
+            r##"{
             "topic": "Discussion",
             "message_ids": ["msg1", "msg2"]
-        }"##.to_string());
-        
+        }"##
+            .to_string(),
+        );
+
         let parsed = ParsedEntities::from_json(&entities);
         assert_eq!(parsed.message_ids, vec!["msg1", "msg2"]);
         assert!(parsed.key_message_ids.is_empty());
@@ -314,12 +360,15 @@ mod tests {
 
     #[test]
     fn test_parsed_entities_filters_empty_arrays() {
-        let entities = Some(r#"{
+        let entities = Some(
+            r#"{
             "topic": "Test",
             "channels": [],
             "people": []
-        }"#.to_string());
-        
+        }"#
+            .to_string(),
+        );
+
         let parsed = ParsedEntities::from_json(&entities);
         assert!(parsed.channels.is_none());
         assert!(parsed.people.is_none());
@@ -333,7 +382,7 @@ mod tests {
             slack_users: 25,
             sync_states: 10,
         };
-        
+
         let json = serde_json::to_string(&stats).unwrap();
         assert!(json.contains("\"contentItems\":100"));
         assert!(json.contains("\"slackUsers\":25"));
@@ -352,7 +401,7 @@ mod tests {
                 last_error: None,
             }],
         };
-        
+
         let json = serde_json::to_string(&status).unwrap();
         assert!(json.contains("\"isSyncing\":true"));
         assert!(json.contains("\"lastSyncAt\":1234567890"));

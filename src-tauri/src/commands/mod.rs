@@ -31,7 +31,7 @@ pub use sync::*;
 // Re-export types for use by other modules
 pub use types::{
     AnalyticsSummary, CategorySummary, ClearDataResult, DataStats, DigestItem, DigestResponse,
-    Preferences, SourceStatus, SyncResult, SyncStatus,
+    Preferences, SourceStatus, SyncResult, SyncStatus, WeeklyBreakdownResponse,
 };
 
 #[cfg(test)]
@@ -67,7 +67,7 @@ mod tests {
             people: None,
             message_count: None,
         };
-        
+
         assert_eq!(item.id, "test");
     }
 
@@ -79,15 +79,15 @@ mod tests {
             next_sync_at: None,
             sources: vec![],
         };
-        
+
         assert!(!status.is_syncing);
-        
+
         let result = SyncResult {
             items_synced: 0,
             channels_processed: 0,
             errors: vec![],
         };
-        
+
         assert_eq!(result.items_synced, 0);
     }
 }

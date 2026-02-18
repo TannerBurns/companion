@@ -1,6 +1,6 @@
-use crate::AppState;
+use super::types::{ClearDataResult, DataStats};
 use crate::pipeline::PipelineState;
-use super::types::{DataStats, ClearDataResult};
+use crate::AppState;
 use std::sync::Arc;
 use tauri::State;
 use tokio::sync::Mutex;
@@ -17,34 +17,32 @@ pub async fn get_pipeline_status(
 
 /// Get database statistics
 #[tauri::command]
-pub async fn get_data_stats(
-    state: State<'_, Arc<Mutex<AppState>>>,
-) -> Result<DataStats, String> {
+pub async fn get_data_stats(state: State<'_, Arc<Mutex<AppState>>>) -> Result<DataStats, String> {
     let db = {
         let state = state.lock().await;
         state.db.clone()
     };
-    
+
     let content_items: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM content_items")
         .fetch_one(db.pool())
         .await
         .map_err(|e| e.to_string())?;
-    
+
     let ai_summaries: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM ai_summaries")
         .fetch_one(db.pool())
         .await
         .map_err(|e| e.to_string())?;
-    
+
     let slack_users: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM slack_users")
         .fetch_one(db.pool())
         .await
         .unwrap_or((0,)); // Table might not exist yet
-    
+
     let sync_states: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM sync_state")
         .fetch_one(db.pool())
         .await
         .map_err(|e| e.to_string())?;
-    
+
     Ok(DataStats {
         content_items: content_items.0,
         ai_summaries: ai_summaries.0,
@@ -62,45 +60,49 @@ pub async fn clear_synced_data(
         let state = state.lock().await;
         state.db.clone()
     };
-    
+
     let content_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM content_items")
         .fetch_one(db.pool())
         .await
         .map_err(|e| e.to_string())?;
-    
+
     let summary_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM ai_summaries")
         .fetch_one(db.pool())
         .await
         .map_err(|e| e.to_string())?;
-    
+
     sqlx::query("DELETE FROM content_items")
         .execute(db.pool())
         .await
         .map_err(|e| e.to_string())?;
-    
+
     sqlx::query("DELETE FROM ai_summaries")
         .execute(db.pool())
         .await
         .map_err(|e| e.to_string())?;
-    
+
     sqlx::query("DELETE FROM sync_state")
         .execute(db.pool())
         .await
         .map_err(|e| e.to_string())?;
-    
+
     sqlx::query("DELETE FROM slack_users")
         .execute(db.pool())
         .await
         .ok();
-    
+
     sqlx::query("DELETE FROM preferences WHERE key = 'last_sync_at'")
         .execute(db.pool())
         .await
         .map_err(|e| e.to_string())?;
-    
+
     let total_deleted = content_count.0 + summary_count.0;
-    tracing::info!("Cleared synced data: {} content items, {} summaries", content_count.0, summary_count.0);
-    
+    tracing::info!(
+        "Cleared synced data: {} content items, {} summaries",
+        content_count.0,
+        summary_count.0
+    );
+
     Ok(ClearDataResult {
         items_deleted: total_deleted,
     })
@@ -108,56 +110,54 @@ pub async fn clear_synced_data(
 
 /// Factory reset - clears all data including credentials
 #[tauri::command]
-pub async fn factory_reset(
-    state: State<'_, Arc<Mutex<AppState>>>,
-) -> Result<(), String> {
+pub async fn factory_reset(state: State<'_, Arc<Mutex<AppState>>>) -> Result<(), String> {
     let db = {
         let state = state.lock().await;
         state.db.clone()
     };
-    
+
     sqlx::query("DELETE FROM content_items")
         .execute(db.pool())
         .await
         .map_err(|e| e.to_string())?;
-    
+
     sqlx::query("DELETE FROM ai_summaries")
         .execute(db.pool())
         .await
         .map_err(|e| e.to_string())?;
-    
+
     sqlx::query("DELETE FROM sync_state")
         .execute(db.pool())
         .await
         .map_err(|e| e.to_string())?;
-    
+
     sqlx::query("DELETE FROM slack_users")
         .execute(db.pool())
         .await
         .ok();
-    
+
     sqlx::query("DELETE FROM credentials")
         .execute(db.pool())
         .await
         .map_err(|e| e.to_string())?;
-    
+
     sqlx::query("DELETE FROM slack_selected_channels")
         .execute(db.pool())
         .await
         .map_err(|e| e.to_string())?;
-    
+
     sqlx::query("DELETE FROM preferences")
         .execute(db.pool())
         .await
         .map_err(|e| e.to_string())?;
-    
+
     sqlx::query("DELETE FROM analytics")
         .execute(db.pool())
         .await
         .map_err(|e| e.to_string())?;
-    
+
     tracing::info!("Factory reset complete - all data cleared");
-    
+
     Ok(())
 }
 
@@ -173,7 +173,7 @@ mod tests {
             slack_users: 25,
             sync_states: 10,
         };
-        
+
         assert_eq!(stats.content_items, 100);
         assert_eq!(stats.ai_summaries, 50);
         assert_eq!(stats.slack_users, 25);
@@ -182,10 +182,8 @@ mod tests {
 
     #[test]
     fn test_clear_data_result() {
-        let result = ClearDataResult {
-            items_deleted: 150,
-        };
-        
+        let result = ClearDataResult { items_deleted: 150 };
+
         assert_eq!(result.items_deleted, 150);
     }
 
@@ -194,20 +192,16 @@ mod tests {
         let content_count = 100i64;
         let summary_count = 50i64;
         let total = content_count + summary_count;
-        
+
         assert_eq!(total, 150);
     }
 
     #[test]
     fn test_tables_to_clear() {
         // Verify we know all tables that should be cleared
-        let tables_for_clear_synced = vec![
-            "content_items",
-            "ai_summaries", 
-            "sync_state",
-            "slack_users",
-        ];
-        
+        let tables_for_clear_synced =
+            vec!["content_items", "ai_summaries", "sync_state", "slack_users"];
+
         let tables_for_factory_reset = [
             "content_items",
             "ai_summaries",
@@ -218,10 +212,10 @@ mod tests {
             "preferences",
             "analytics",
         ];
-        
+
         // Factory reset clears more tables
         assert!(tables_for_factory_reset.len() > tables_for_clear_synced.len());
-        
+
         // All clear_synced tables should be in factory_reset
         for table in &tables_for_clear_synced {
             assert!(tables_for_factory_reset.contains(table));
@@ -236,7 +230,7 @@ mod tests {
             slack_users: 0,
             sync_states: 0,
         };
-        
+
         let json = serde_json::to_string(&stats).unwrap();
         assert!(json.contains("contentItems"));
         assert!(json.contains("aiSummaries"));

@@ -7,10 +7,18 @@ vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(),
 }))
 
-import { useSyncCompletedListener } from './useDigest'
+vi.mock('../lib/api', () => ({
+  api: {
+    generateWeeklyBreakdown: vi.fn(),
+  },
+}))
+
+import { useGenerateWeeklyBreakdown, useSyncCompletedListener } from './useDigest'
 import { listen } from '@tauri-apps/api/event'
+import { api } from '../lib/api'
 
 const mockListen = listen as ReturnType<typeof vi.fn>
+const mockGenerateWeeklyBreakdown = api.generateWeeklyBreakdown as ReturnType<typeof vi.fn>
 
 function createWrapper() {
   const queryClient = new QueryClient({
@@ -104,5 +112,40 @@ describe('useSyncCompletedListener', () => {
     })
 
     warnSpy.mockRestore()
+  })
+})
+
+describe('useGenerateWeeklyBreakdown', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('calls api.generateWeeklyBreakdown with weekStart and timezoneOffset', async () => {
+    mockGenerateWeeklyBreakdown.mockResolvedValue({
+      title: 'Weekly Breakdown',
+      breakdownText: 'Summary',
+    })
+    const { wrapper } = createWrapper()
+    const { result } = renderHook(() => useGenerateWeeklyBreakdown(), { wrapper })
+
+    await result.current.mutateAsync({
+      weekStart: '2026-02-16',
+      timezoneOffset: -300,
+    })
+
+    expect(mockGenerateWeeklyBreakdown).toHaveBeenCalledWith('2026-02-16', -300)
+  })
+
+  it('passes undefined params through when omitted', async () => {
+    mockGenerateWeeklyBreakdown.mockResolvedValue({
+      title: 'Weekly Breakdown',
+      breakdownText: 'Summary',
+    })
+    const { wrapper } = createWrapper()
+    const { result } = renderHook(() => useGenerateWeeklyBreakdown(), { wrapper })
+
+    await result.current.mutateAsync({})
+
+    expect(mockGenerateWeeklyBreakdown).toHaveBeenCalledWith(undefined, undefined)
   })
 })

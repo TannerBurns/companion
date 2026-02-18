@@ -14,16 +14,16 @@ const OAUTH_TIMEOUT_SECS: u64 = 300;
 pub enum OAuthCallbackError {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
-    
+
     #[error("Timeout waiting for OAuth callback")]
     Timeout,
-    
+
     #[error("Invalid callback: {0}")]
     InvalidCallback(String),
-    
+
     #[error("State mismatch")]
     StateMismatch,
-    
+
     #[error("Callback cancelled")]
     Cancelled,
 }
@@ -44,7 +44,7 @@ pub async fn wait_for_oauth_callback(
 
 /// Spawns the OAuth callback listener in a background task and returns a receiver
 /// for the authorization code.
-/// 
+///
 /// This function binds the listener to the port before returning, ensuring no race
 /// conditions when opening the browser afterwards.
 pub async fn spawn_oauth_callback_listener(
@@ -52,14 +52,14 @@ pub async fn spawn_oauth_callback_listener(
     expected_state: String,
 ) -> Result<oneshot::Receiver<Result<String, OAuthCallbackError>>, OAuthCallbackError> {
     let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).await?;
-    
+
     let (tx, rx) = oneshot::channel();
-    
+
     tokio::spawn(async move {
         let result = handle_oauth_callback(listener, expected_state, None).await;
         let _ = tx.send(result.map(|r| r.code));
     });
-    
+
     Ok(rx)
 }
 
@@ -71,31 +71,32 @@ async fn handle_oauth_callback(
 ) -> Result<CallbackResult, OAuthCallbackError> {
     let timeout_duration = Duration::from_secs(timeout_secs.unwrap_or(OAUTH_TIMEOUT_SECS));
     let accept_result = timeout(timeout_duration, listener.accept()).await;
-    
+
     let (mut socket, _) = match accept_result {
         Ok(Ok(conn)) => conn,
         Ok(Err(e)) => return Err(OAuthCallbackError::Io(e)),
         Err(_) => return Err(OAuthCallbackError::Timeout),
     };
-    
+
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    
+
     let mut buffer = [0u8; 2048];
     let bytes_read = socket.read(&mut buffer).await?;
-    
+
     let request = String::from_utf8_lossy(&buffer[..bytes_read]);
-    let (code, state) = parse_oauth_callback(&request)
-        .ok_or_else(|| OAuthCallbackError::InvalidCallback("Could not parse callback URL".into()))?;
-    
+    let (code, state) = parse_oauth_callback(&request).ok_or_else(|| {
+        OAuthCallbackError::InvalidCallback("Could not parse callback URL".into())
+    })?;
+
     if state != expected_state {
         let error_response = build_error_response("State mismatch - possible CSRF attack");
         socket.write_all(error_response.as_bytes()).await?;
         return Err(OAuthCallbackError::StateMismatch);
     }
-    
+
     let success_response = build_success_response();
     socket.write_all(success_response.as_bytes()).await?;
-    
+
     Ok(CallbackResult { code })
 }
 
@@ -105,7 +106,7 @@ fn parse_oauth_callback(request: &str) -> Option<(String, String)> {
     let query_start = request.find('?')?;
     let query_end = request[query_start..].find(' ')?;
     let query = &request[query_start + 1..query_start + query_end];
-    
+
     let params: HashMap<&str, &str> = query
         .split('&')
         .filter_map(|p| {
@@ -113,10 +114,10 @@ fn parse_oauth_callback(request: &str) -> Option<(String, String)> {
             Some((parts.next()?, parts.next()?))
         })
         .collect();
-    
+
     let code = params.get("code")?.to_string();
     let state = params.get("state")?.to_string();
-    
+
     Some((code, state))
 }
 
@@ -153,7 +154,7 @@ fn build_error_response(message: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_parse_oauth_callback() {
         let request = "GET /callback?code=abc123&state=xyz789 HTTP/1.1\r\nHost: localhost";
@@ -163,7 +164,7 @@ mod tests {
         assert_eq!(code, "abc123");
         assert_eq!(state, "xyz789");
     }
-    
+
     #[test]
     fn test_parse_oauth_callback_invalid() {
         let request = "GET /callback HTTP/1.1\r\nHost: localhost";

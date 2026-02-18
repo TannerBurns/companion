@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
 
 // Mock the API
@@ -19,12 +19,19 @@ vi.mock('../lib/api', () => ({
 import { useSlackChannels } from './useSlackChannels'
 
 describe('useSlackChannels', () => {
+  let consoleErrorSpy: ReturnType<typeof vi.spyOn>
+
   beforeEach(() => {
+    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.clearAllMocks()
     mockListSlackChannels.mockResolvedValue([])
     mockGetSavedSlackChannels.mockResolvedValue([])
     mockListSlackUsers.mockResolvedValue([])
     mockSaveSlackChannels.mockResolvedValue(undefined)
+  })
+
+  afterEach(() => {
+    consoleErrorSpy.mockRestore()
   })
 
   it('starts with empty state', () => {
