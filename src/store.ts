@@ -11,7 +11,7 @@ export interface SlackState {
   selectedChannelCount: number
 }
 
-export type LocalActivityStatus = 'running' | 'completed' | 'failed'
+export type LocalActivityStatus = 'running' | 'completed' | 'failed' | 'queued'
 
 export interface LocalActivity {
   id: string
@@ -39,7 +39,7 @@ export interface AppStore {
   // Local activities (client-side tasks like PDF export)
   localActivities: LocalActivity[]
   hasUnseenActivity: boolean
-  addLocalActivity: (activity: Omit<LocalActivity, 'id' | 'startedAt' | 'completedAt' | 'error'> & { status: 'running' }) => string
+  addLocalActivity: (activity: Omit<LocalActivity, 'id' | 'startedAt' | 'completedAt' | 'error'> & { status: 'running' | 'queued' }) => string
   updateLocalActivity: (id: string, updates: Partial<Pick<LocalActivity, 'status' | 'message' | 'error'>>) => void
   clearOldLocalActivities: () => void
   markActivitySeen: () => void
@@ -115,6 +115,7 @@ export const useAppStore = create<AppStore>((set) => ({
       localActivities: prev.localActivities.filter(
         (activity) =>
           activity.status === 'running' ||
+          activity.status === 'queued' ||
           (activity.completedAt && activity.completedAt > fiveMinutesAgo)
       ),
     }))

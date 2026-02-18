@@ -66,7 +66,7 @@ function localActivityToPipelineTask(activity: LocalActivity): PipelineTask {
   return {
     id: activity.id,
     task_type: activity.type as PipelineTaskType,
-    status: activity.status,
+    status: activity.status === 'queued' ? 'pending' : activity.status,
     message: activity.message,
     progress: null,
     started_at: Math.floor(activity.startedAt / 1000), // Convert to seconds
@@ -103,11 +103,11 @@ export function usePipeline() {
   }, [clearOldLocalActivities])
 
   const localRunning = localActivities
-    .filter((a) => a.status === 'running')
+    .filter((a) => a.status === 'running' || a.status === 'queued')
     .map(localActivityToPipelineTask)
-  
+
   const localCompleted = localActivities
-    .filter((a) => a.status !== 'running')
+    .filter((a) => a.status !== 'running' && a.status !== 'queued')
     .map(localActivityToPipelineTask)
 
   const allActiveTasks = [...localRunning, ...state.active_tasks]

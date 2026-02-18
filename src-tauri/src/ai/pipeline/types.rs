@@ -2,6 +2,8 @@ use serde::Serialize;
 
 pub const HIERARCHICAL_CHANNEL_THRESHOLD: usize = 50;
 pub const HIERARCHICAL_TOTAL_THRESHOLD: usize = 200;
+pub const HISTORICAL_AI_CHUNK_SIZE: i64 = 150;
+pub const HIERARCHICAL_CHANNEL_CHUNK_SIZE: usize = 80;
 
 /// Database row for content items
 #[derive(sqlx::FromRow)]
@@ -27,7 +29,7 @@ pub struct SlackUserRow {
 }
 
 /// Message formatted for AI prompts
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 pub struct MessageForPrompt {
     pub id: String,
     pub channel: String,
@@ -58,6 +60,39 @@ mod tests {
     fn test_hierarchical_thresholds() {
         assert_eq!(HIERARCHICAL_CHANNEL_THRESHOLD, 50);
         assert_eq!(HIERARCHICAL_TOTAL_THRESHOLD, 200);
+    }
+
+    #[test]
+    fn test_historical_ai_chunk_size() {
+        assert_eq!(HISTORICAL_AI_CHUNK_SIZE, 150);
+    }
+
+    #[test]
+    fn test_hierarchical_channel_chunk_size() {
+        assert_eq!(HIERARCHICAL_CHANNEL_CHUNK_SIZE, 80);
+    }
+
+    #[test]
+    fn test_message_for_prompt_clone() {
+        let original = MessageForPrompt {
+            id: "msg1".to_string(),
+            channel: "#general".to_string(),
+            author: "Alice".to_string(),
+            timestamp: "10:30".to_string(),
+            text: "Hello world".to_string(),
+            url: Some("https://slack.com/msg1".to_string()),
+            thread_id: Some("thread-123".to_string()),
+        };
+
+        let cloned = original.clone();
+
+        assert_eq!(cloned.id, "msg1");
+        assert_eq!(cloned.channel, "#general");
+        assert_eq!(cloned.author, "Alice");
+        assert_eq!(cloned.timestamp, "10:30");
+        assert_eq!(cloned.text, "Hello world");
+        assert_eq!(cloned.url, Some("https://slack.com/msg1".to_string()));
+        assert_eq!(cloned.thread_id, Some("thread-123".to_string()));
     }
 
     #[test]

@@ -1,4 +1,6 @@
-use super::types::{MessageForPrompt, HIERARCHICAL_CHANNEL_THRESHOLD};
+use super::types::{
+    MessageForPrompt, HIERARCHICAL_CHANNEL_CHUNK_SIZE, HIERARCHICAL_CHANNEL_THRESHOLD,
+};
 use crate::ai::gemini::GeminiClient;
 use crate::ai::prompts::{self, ChannelSummary, GroupedAnalysisResult};
 use std::collections::HashMap;
@@ -33,21 +35,58 @@ pub async fn process_hierarchical(
                 messages.len()
             );
 
-            let messages_json =
-                serde_json::to_string_pretty(&messages).map_err(|e| e.to_string())?;
+            if messages.len() > HIERARCHICAL_CHANNEL_CHUNK_SIZE {
+                for (chunk_index, chunk) in messages.chunks(HIERARCHICAL_CHANNEL_CHUNK_SIZE).enumerate()
+                {
+                    tracing::debug!(
+                        "Channel {} chunk {}/{} ({} messages)",
+                        channel,
+                        chunk_index + 1,
+                        messages.len().div_ceil(HIERARCHICAL_CHANNEL_CHUNK_SIZE),
+                        chunk.len()
+                    );
 
-            let prompt =
-                prompts::channel_summary_prompt(&channel, None, &messages_json, user_guidance);
+                    let messages_json =
+                        serde_json::to_string_pretty(chunk).map_err(|e| e.to_string())?;
+                    let prompt = prompts::channel_summary_prompt(
+                        &channel,
+                        None,
+                        &messages_json,
+                        user_guidance,
+                    );
 
-            match gemini.generate_json::<ChannelSummary>(&prompt).await {
-                Ok(mut summary) => {
-                    summary.message_count = messages.len() as i32;
-                    channel_summaries.push(summary);
+                    match gemini.generate_json::<ChannelSummary>(&prompt).await {
+                        Ok(mut summary) => {
+                            summary.message_count = chunk.len() as i32;
+                            channel_summaries.push(summary);
+                        }
+                        Err(e) => {
+                            tracing::error!(
+                                "Failed to summarize channel {} chunk {}: {}",
+                                channel,
+                                chunk_index + 1,
+                                e
+                            );
+                            small_channel_messages.extend(chunk.iter().cloned());
+                        }
+                    }
                 }
-                Err(e) => {
-                    tracing::error!("Failed to summarize channel {}: {}", channel, e);
-                    // Fall back to including messages directly
-                    small_channel_messages.extend(messages);
+            } else {
+                let messages_json =
+                    serde_json::to_string_pretty(&messages).map_err(|e| e.to_string())?;
+                let prompt =
+                    prompts::channel_summary_prompt(&channel, None, &messages_json, user_guidance);
+
+                match gemini.generate_json::<ChannelSummary>(&prompt).await {
+                    Ok(mut summary) => {
+                        summary.message_count = messages.len() as i32;
+                        channel_summaries.push(summary);
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to summarize channel {}: {}", channel, e);
+                        // Fall back to including messages directly
+                        small_channel_messages.extend(messages);
+                    }
                 }
             }
         } else {
@@ -177,5 +216,37 @@ mod tests {
 
         assert!(ungrouped_json.is_some());
         assert!(ungrouped_json.unwrap().contains("msg1"));
+    }
+
+    #[test]
+    fn test_large_channel_chunking_uses_configured_chunk_size() {
+        let messages: Vec<MessageForPrompt> = (0..(HIERARCHICAL_CHANNEL_CHUNK_SIZE * 2 + 7))
+            .map(|i| MessageForPrompt {
+                id: format!("msg{}", i),
+                channel: "#large".to_string(),
+                author: "user".to_string(),
+                timestamp: "10:00".to_string(),
+                text: format!("Message {}", i),
+                url: None,
+                thread_id: None,
+            })
+            .collect();
+
+        let chunk_sizes: Vec<usize> = messages
+            .chunks(HIERARCHICAL_CHANNEL_CHUNK_SIZE)
+            .map(|chunk| chunk.len())
+            .collect();
+
+        assert_eq!(
+            chunk_sizes,
+            vec![HIERARCHICAL_CHANNEL_CHUNK_SIZE, HIERARCHICAL_CHANNEL_CHUNK_SIZE, 7]
+        );
+    }
+
+    #[test]
+    fn test_channel_chunk_count_uses_ceil_division() {
+        let count =
+            (HIERARCHICAL_CHANNEL_CHUNK_SIZE * 2 + 1).div_ceil(HIERARCHICAL_CHANNEL_CHUNK_SIZE);
+        assert_eq!(count, 3);
     }
 }

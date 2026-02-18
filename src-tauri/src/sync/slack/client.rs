@@ -2,7 +2,7 @@
 
 use super::types::{
     ChannelHistoryResponse, OAuthResponse, SlackAuthInfo, SlackChannel, SlackError, SlackMessage,
-    SlackTokens, SlackUser,
+    SlackTokens, SlackUser, ThreadRepliesResponse,
 };
 use crate::sync::oauth::spawn_oauth_callback_listener;
 use reqwest::Client;
@@ -484,22 +484,30 @@ impl SlackClient {
         Ok(all_users)
     }
 
-    /// Fetch thread replies
-    pub async fn get_thread_replies(
+    /// Fetch paginated thread replies
+    pub async fn get_thread_replies_page(
         &self,
         channel_id: &str,
         thread_ts: &str,
-    ) -> Result<Vec<SlackMessage>, SlackError> {
+        cursor: Option<&str>,
+        limit: usize,
+    ) -> Result<ThreadRepliesResponse, SlackError> {
         let token = self
             .access_token
             .as_ref()
             .ok_or_else(|| SlackError::OAuth("Not authenticated".into()))?;
 
+        let limit_str = limit.to_string();
+        let mut params = vec![("channel", channel_id), ("ts", thread_ts), ("limit", &limit_str)];
+        if let Some(c) = cursor {
+            params.push(("cursor", c));
+        }
+
         let response = self
             .http
             .get(format!("{}/conversations.replies", SLACK_API_BASE))
             .bearer_auth(token)
-            .query(&[("channel", channel_id), ("ts", thread_ts)])
+            .query(&params)
             .send()
             .await?;
 
@@ -518,7 +526,7 @@ impl SlackClient {
             ));
         }
 
-        let messages = json["messages"]
+        let messages: Vec<SlackMessage> = json["messages"]
             .as_array()
             .map(|msgs| {
                 msgs.iter()
@@ -533,7 +541,17 @@ impl SlackClient {
             })
             .unwrap_or_default();
 
-        Ok(messages)
+        let has_more = json["has_more"].as_bool().unwrap_or(false);
+        let next_cursor = json["response_metadata"]["next_cursor"]
+            .as_str()
+            .filter(|c| !c.is_empty())
+            .map(String::from);
+
+        Ok(ThreadRepliesResponse {
+            messages,
+            has_more,
+            next_cursor,
+        })
     }
 }
 
@@ -593,7 +611,9 @@ mod tests {
     #[tokio::test]
     async fn test_get_thread_replies_requires_auth() {
         let client = SlackClient::new("id".into(), "secret".into());
-        let result = client.get_thread_replies("C123", "1234567890.123456").await;
+        let result = client
+            .get_thread_replies_page("C123", "1234567890.123456", None, 100)
+            .await;
 
         assert!(result.is_err());
         let err = result.unwrap_err();

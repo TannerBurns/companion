@@ -5,8 +5,8 @@ mod types;
 
 pub use topics::{convert_existing_topics, generate_topic_id, merge_message_ids};
 pub use types::{
-    ContentItemRow, ExistingTopicRow, MessageForPrompt, SlackUserRow,
-    HIERARCHICAL_CHANNEL_THRESHOLD, HIERARCHICAL_TOTAL_THRESHOLD,
+    ContentItemRow, ExistingTopicRow, MessageForPrompt, SlackUserRow, HISTORICAL_AI_CHUNK_SIZE,
+    HIERARCHICAL_CHANNEL_CHUNK_SIZE, HIERARCHICAL_CHANNEL_THRESHOLD, HIERARCHICAL_TOTAL_THRESHOLD,
 };
 
 use super::gemini::{GeminiClient, ServiceAccountCredentials};
@@ -345,105 +345,147 @@ impl ProcessingPipeline {
         let start_ts = local_midnight.with_timezone(&Utc).timestamp_millis();
         let end_ts = start_ts + 86400 * 1000;
 
-        let items: Vec<ContentItemRow> = sqlx::query_as(
-            "SELECT ci.id, ci.source, ci.content_type, ci.title, ci.body, 
-                    ci.author_id, ci.channel_or_project, ci.source_url, ci.parent_id, ci.created_at
-             FROM content_items ci
-             LEFT JOIN ai_summaries s ON ci.id = s.content_item_id
-             WHERE s.id IS NULL AND ci.created_at >= ? AND ci.created_at < ?
-             ORDER BY ci.created_at ASC",
-        )
-        .bind(start_ts)
-        .bind(end_ts)
-        .fetch_all(self.db.pool())
-        .await
-        .map_err(|e| e.to_string())?;
-
-        if items.is_empty() {
-            tracing::info!("No unprocessed items for {}", date_str);
-            return Ok(0);
-        }
-
-        tracing::info!("Processing {} items in batch for {}", items.len(), date_str);
         let user_map = self.load_user_map().await.unwrap_or_default();
         let user_guidance = self.load_user_guidance().await;
+        let mut total_stored = 0;
+        let mut chunk_index = 0;
+        let mut cursor: Option<(i64, String)> = None;
 
-        let existing_topic_rows: Vec<ExistingTopicRow> = sqlx::query_as(
-            "SELECT id, summary, category, importance_score, entities
-             FROM ai_summaries
-             WHERE summary_type = 'group' AND generated_at >= ? AND generated_at < ?
-             ORDER BY importance_score DESC",
-        )
-        .bind(start_ts)
-        .bind(end_ts)
-        .fetch_all(self.db.pool())
-        .await
-        .map_err(|e| e.to_string())?;
+        loop {
+            let items: Vec<ContentItemRow> = if let Some((cursor_created_at, ref cursor_id)) = cursor
+            {
+                sqlx::query_as(
+                    "SELECT ci.id, ci.source, ci.content_type, ci.title, ci.body, 
+                            ci.author_id, ci.channel_or_project, ci.source_url, ci.parent_id, ci.created_at
+                     FROM content_items ci
+                     LEFT JOIN ai_summaries s ON ci.id = s.content_item_id
+                     WHERE s.id IS NULL
+                       AND ci.created_at >= ? AND ci.created_at < ?
+                       AND (ci.created_at > ? OR (ci.created_at = ? AND ci.id > ?))
+                     ORDER BY ci.created_at ASC, ci.id ASC
+                     LIMIT ?",
+                )
+                .bind(start_ts)
+                .bind(end_ts)
+                .bind(cursor_created_at)
+                .bind(cursor_created_at)
+                .bind(cursor_id)
+                .bind(HISTORICAL_AI_CHUNK_SIZE)
+                .fetch_all(self.db.pool())
+                .await
+                .map_err(|e| e.to_string())?
+            } else {
+                sqlx::query_as(
+                    "SELECT ci.id, ci.source, ci.content_type, ci.title, ci.body, 
+                            ci.author_id, ci.channel_or_project, ci.source_url, ci.parent_id, ci.created_at
+                     FROM content_items ci
+                     LEFT JOIN ai_summaries s ON ci.id = s.content_item_id
+                     WHERE s.id IS NULL AND ci.created_at >= ? AND ci.created_at < ?
+                     ORDER BY ci.created_at ASC, ci.id ASC
+                     LIMIT ?",
+                )
+                .bind(start_ts)
+                .bind(end_ts)
+                .bind(HISTORICAL_AI_CHUNK_SIZE)
+                .fetch_all(self.db.pool())
+                .await
+                .map_err(|e| e.to_string())?
+            };
 
-        let (mut existing_message_ids_map, existing_topics) =
-            convert_existing_topics(&existing_topic_rows);
-        tracing::info!(
-            "Found {} existing topic groups for {}",
-            existing_topics.len(),
-            date_str
-        );
-
-        let (messages_for_prompt, _item_ids) =
-            self.build_messages_for_prompt(&items, &user_map).await;
-
-        if messages_for_prompt.is_empty() {
-            tracing::info!("All items were empty, nothing to process");
-            return Ok(0);
-        }
-
-        let result = if messages_for_prompt.len() >= HIERARCHICAL_TOTAL_THRESHOLD {
-            tracing::info!(
-                "Using hierarchical summarization for {} messages",
-                messages_for_prompt.len()
-            );
-
-            let mut messages_by_channel: HashMap<String, Vec<MessageForPrompt>> = HashMap::new();
-            for msg in messages_for_prompt {
-                messages_by_channel
-                    .entry(msg.channel.clone())
-                    .or_default()
-                    .push(msg);
+            if items.is_empty() {
+                if chunk_index == 0 {
+                    tracing::info!("No unprocessed items for {}", date_str);
+                }
+                break;
             }
 
-            hierarchical::process_hierarchical(
-                &self.gemini,
+            cursor = items.last().map(|item| (item.created_at, item.id.clone()));
+            chunk_index += 1;
+            tracing::info!(
+                "Processing historical AI chunk {} for {} ({} items)",
+                chunk_index,
                 date_str,
-                messages_by_channel,
-                user_guidance.as_deref(),
+                items.len()
+            );
+
+            let existing_topic_rows: Vec<ExistingTopicRow> = sqlx::query_as(
+                "SELECT id, summary, category, importance_score, entities
+                 FROM ai_summaries
+                 WHERE summary_type = 'group' AND generated_at >= ? AND generated_at < ?
+                 ORDER BY importance_score DESC",
             )
-            .await?
-        } else {
-            self.process_batch_direct(
+            .bind(start_ts)
+            .bind(end_ts)
+            .fetch_all(self.db.pool())
+            .await
+            .map_err(|e| e.to_string())?;
+
+            let (mut existing_message_ids_map, existing_topics) =
+                convert_existing_topics(&existing_topic_rows);
+
+            let (messages_for_prompt, _item_ids) =
+                self.build_messages_for_prompt(&items, &user_map).await;
+
+            if messages_for_prompt.is_empty() {
+                tracing::warn!(
+                    "Historical AI chunk {} for {} had no message text after decrypt/filter, skipping",
+                    chunk_index,
+                    date_str
+                );
+                continue;
+            }
+
+            let result = if messages_for_prompt.len() >= HIERARCHICAL_TOTAL_THRESHOLD {
+                tracing::info!(
+                    "Using hierarchical summarization for {} messages",
+                    messages_for_prompt.len()
+                );
+
+                let mut messages_by_channel: HashMap<String, Vec<MessageForPrompt>> = HashMap::new();
+                for msg in messages_for_prompt {
+                    messages_by_channel
+                        .entry(msg.channel.clone())
+                        .or_default()
+                        .push(msg);
+                }
+
+                hierarchical::process_hierarchical(
+                    &self.gemini,
+                    date_str,
+                    messages_by_channel,
+                    user_guidance.as_deref(),
+                )
+                .await?
+            } else {
+                self.process_batch_direct(
+                    date_str,
+                    messages_for_prompt,
+                    &existing_topics,
+                    user_guidance.as_deref(),
+                )
+                .await?
+            };
+
+            let stored_count = storage::store_results(
+                self.db.pool(),
+                &result,
                 date_str,
-                messages_for_prompt,
-                &existing_topics,
-                user_guidance.as_deref(),
+                &mut existing_message_ids_map,
             )
-            .await?
-        };
+            .await?;
 
-        let stored_count = storage::store_results(
-            self.db.pool(),
-            &result,
-            date_str,
-            &mut existing_message_ids_map,
-        )
-        .await?;
+            total_stored += stored_count;
+            tracing::info!(
+                "Historical AI chunk {} complete: {} groups, {} ungrouped, {} action items, stored {}",
+                chunk_index,
+                result.groups.len(),
+                result.ungrouped.len(),
+                result.action_items.len(),
+                stored_count
+            );
+        }
 
-        tracing::info!(
-            "Batch processing complete for {}: {} groups (updated/new), {} ungrouped, {} action items",
-            date_str,
-            result.groups.len(),
-            result.ungrouped.len(),
-            result.action_items.len()
-        );
-
-        Ok(stored_count)
+        Ok(total_stored)
     }
 
     /// Generate daily digest for a specific date.
